@@ -1,0 +1,17 @@
+# LinkStamp changes: keep project service routes internal.
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: short-link-admin
+              uri: lb://short-link-admin/api/short-link/admin/**
+              predicates:
+                - Path=/api/short-link/admin/**
+              filters:
+                - name: TokenValidate
+                  args:
+                    whitePathList:
+                      - /api/short-link/admin/v1/user/login
+                      - /api/short-link/admin/v1/user/has-username

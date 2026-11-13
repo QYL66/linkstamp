@@ -1,0 +1,71 @@
+# LinkStamp changes: local runtime settings are configurable.
+server:
+  address: 127.0.0.1
+  port: 8003
+
+spring:
+  application:
+    name: short-link-aggregation
+  datasource:
+    driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
+    url: jdbc:shardingsphere:absolutepath:${SHORTLINK_SHARDING_FILE:./.runtime/sharding.yaml}
+  data:
+    redis:
+      host: ${SHORTLINK_REDIS_HOST:127.0.0.1}
+      port: ${SHORTLINK_REDIS_PORT:16380}
+  mvc:
+    view:
+      prefix: /templates/
+      suffix: .html
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+
+aggregation:
+  remote-url: http://127.0.0.1:${server.port}
+
+short-link:
+  creation-qps: ${SHORTLINK_CREATE_QPS:20}
+  group:
+    max-num: 20
+  flow-limit:
+    enable: true
+    time-window: 1
+    max-access-count: 20
+  domain:
+    default: ${SHORTLINK_DOMAIN:127.0.0.1:8003}
+  demo-mode:
+    enable: false
+    blacklist:
+      - /api/short-link/admin/v1/group
+      - /api/short-link/admin/v1/recycle-bin/remove
+      - /api/short-link/admin/v1/create
+      - /api/short-link/admin/v1/create/batch
+      - /api/short-link/admin/v1/update
+      - /api/short-link/admin/v1/user
+      - /api/short-link/admin/v1/user/logout
+      - /api/short-link/admin/v1/recycle-bin/save
+  stats:
+    locale:
+      amap-key: ${SHORTLINK_AMAP_KEY:}
+  goto-domain:
+    white-list:
+      enable: false
+      names: 'Example'
+      details:
+        - example.com
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  mapper-locations: classpath:mapper/*.xml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  metrics:
+    tags:
+      application: ${spring.application.name}

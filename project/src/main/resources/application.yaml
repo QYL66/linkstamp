@@ -1,0 +1,40 @@
+# LinkStamp changes: local runtime settings are configurable.
+server:
+  port: 8001
+
+spring:
+  application:
+    name: short-link-project
+  datasource:
+    driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
+    url: jdbc:shardingsphere:absolutepath:${SHORTLINK_SHARDING_FILE:./.runtime/sharding.yaml}
+  data:
+    redis:
+      host: ${SHORTLINK_REDIS_HOST:127.0.0.1}
+      port: ${SHORTLINK_REDIS_PORT:16380}
+  mvc:
+    view:
+      prefix: /templates/
+      suffix: .html
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+
+short-link:
+  domain:
+    default: ${SHORTLINK_DOMAIN:127.0.0.1:8001}
+  stats:
+    locale:
+      amap-key: ${SHORTLINK_AMAP_KEY:}
+  goto-domain:
+    white-list:
+      enable: true
+      names: 'Example'
+      details:
+        - example.com
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  mapper-locations: classpath:mapper/*.xml

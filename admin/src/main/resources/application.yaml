@@ -1,0 +1,26 @@
+# LinkStamp changes: local runtime settings are configurable.
+server:
+  port: 8002
+
+spring:
+  application:
+    name: short-link-admin
+  datasource:
+    driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
+    url: jdbc:shardingsphere:absolutepath:${SHORTLINK_SHARDING_FILE:./.runtime/sharding.yaml}
+  data:
+    redis:
+      host: ${SHORTLINK_REDIS_HOST:127.0.0.1}
+      port: ${SHORTLINK_REDIS_PORT:16380}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+
+short-link:
+  group:
+    max-num: 20
+  flow-limit:
+    enable: true
+    time-window: 1
+    max-access-count: 20

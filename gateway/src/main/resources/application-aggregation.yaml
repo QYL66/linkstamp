@@ -1,0 +1,17 @@
+# LinkStamp changes: expose authenticated administration routes through the gateway.
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: short-link-admin-aggregation
+              uri: http://127.0.0.1:8003
+              predicates:
+                - Path=/api/short-link/admin/**
+              filters:
+                - name: TokenValidate
+                  args:
+                    whitePathList:
+                      - /api/short-link/admin/v1/user/login
+                      - /api/short-link/admin/v1/user/has-username
