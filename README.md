@@ -34,6 +34,9 @@
 
    默认用户名为 `linkstamp`。如使用其他实例，通过 `-DbUrl` 和 `-DbUser` 传入实际连接信息。需要自定义 Redis 时，在 IDEA 的两个运行配置中设置 `SHORTLINK_REDIS_HOST` 和 `SHORTLINK_REDIS_PORT`。如果 Redis 要求密码，再设置 `SPRING_DATA_REDIS_PASSWORD`。
 3. 用 IDEA 打开根目录并导入 Maven 项目，选择 JDK 17。运行 AggregationServiceApplication，等待 8003 就绪，再运行 GatewayServiceApplication。两个运行配置的工作目录均设为项目根目录。网关使用 aggregation 配置，直连本机聚合服务。
+
+   Windows 下项目路径含中文时，在两个运行配置的「缩短命令行」中选择「JAR 清单」。本项目的 JDK 17 在用 `@argfile` 读取含中文的类路径时可能报主类找不到。
+
 4. 在 IDEA 的 PowerShell 终端执行前端命令，然后打开 [本地登录页](http://127.0.0.1:5173/login)。
 
    ~~~powershell

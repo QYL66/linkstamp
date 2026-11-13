@@ -1,0 +1,4 @@
+  +--------------------------------------+
+  |  LinkStamp  |  Aggregation           |
+  +--------------------------------------+
+  Spring Boot ${spring-boot.version}
