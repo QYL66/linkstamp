@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.common.constant;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: retain existing Redis key prefixes and add the statistics dead-letter Stream. */
 
 /**
  * Redis Key 常量类
@@ -68,6 +68,8 @@ public class RedisKeyConstant {
      * 短链接监控消息保存队列 Group 缓存标识
      */
     public static final String SHORT_LINK_STATS_STREAM_GROUP_KEY = "short-link:stats-stream:only-group";
+
+    public static final String SHORT_LINK_STATS_DEAD_LETTER_KEY = "short-link:stats-stream:dead-letter";
 
     /**
      * 创建短链接锁标识

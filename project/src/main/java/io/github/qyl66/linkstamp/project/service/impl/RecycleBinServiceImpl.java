@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.service.impl;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: use the MyBatis-Plus Spring service implementation. */
 
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;

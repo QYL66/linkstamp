@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.controller;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: read session credentials from request headers for status checks and logout. */
 
 import cn.hutool.core.bean.BeanUtil;
 import io.github.qyl66.linkstamp.admin.common.convention.result.Result;

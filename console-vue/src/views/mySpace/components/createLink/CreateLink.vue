@@ -1,4 +1,4 @@
-<!-- LinkStamp changes: portfolio interface and local operation. -->
+<!-- LinkStamp changes: accept an optional custom code and preview the resulting URL. -->
 <template>
   <div>
     <el-form ref="ruleFormRef" :model="formData" :rules="formRule" label-width="96px">

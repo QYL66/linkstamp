@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.remote;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: use the LinkStamp core service ID and support the local aggregation URL. */
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.github.qyl66.linkstamp.admin.common.convention.result.Result;
@@ -46,7 +46,7 @@ import java.util.List;
  * 短链接中台远程调用服务
  */
 @FeignClient(
-        value = "short-link-project",
+        value = "linkstamp-core",
         url = "${aggregation.remote-url:}",
         configuration = OpenFeignConfiguration.class
 )

@@ -18,7 +18,7 @@
 /* LinkStamp changes: normalized end-of-file whitespace. */
 package io.github.qyl66.linkstamp.admin.common.convention.exception;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: moved the Java package to io.github.qyl66.linkstamp. */
 
 import io.github.qyl66.linkstamp.admin.common.convention.errorcode.BaseErrorCode;
 import io.github.qyl66.linkstamp.admin.common.convention.errorcode.IErrorCode;

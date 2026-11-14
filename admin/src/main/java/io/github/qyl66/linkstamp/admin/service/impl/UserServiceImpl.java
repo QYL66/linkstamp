@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.service.impl;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: hash passwords and store the fields needed by the gateway in each Redis session. */
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;

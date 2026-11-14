@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.config;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: make the single-link creation limit configurable and validate its value. */
 
 import com.alibaba.csp.sentinel.slots.block.RuleConstant;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;

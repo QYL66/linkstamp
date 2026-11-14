@@ -1,11 +1,11 @@
-# LinkStamp changes: local runtime settings are configurable.
+# LinkStamp changes: use the LinkStamp service name and configurable local connections.
 server:
   address: 127.0.0.1
   port: 8003
 
 spring:
   application:
-    name: short-link-aggregation
+    name: linkstamp-aggregation
   datasource:
     driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
     url: jdbc:shardingsphere:absolutepath:${SHORTLINK_SHARDING_FILE:./.runtime/sharding.yaml}

@@ -1,12 +1,12 @@
-# LinkStamp changes: keep project service routes internal.
+# LinkStamp changes: route admin requests through discovery under the LinkStamp admin service ID.
 spring:
   cloud:
     gateway:
       server:
         webflux:
           routes:
-            - id: short-link-admin
-              uri: lb://short-link-admin/api/short-link/admin/**
+            - id: linkstamp-admin
+              uri: lb://linkstamp-admin/api/short-link/admin/**
               predicates:
                 - Path=/api/short-link/admin/**
               filters:

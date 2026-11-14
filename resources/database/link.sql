@@ -1169,3 +1169,9 @@ CREATE TABLE `t_user_9`
     PRIMARY KEY (`id`),
     UNIQUE KEY `idx_unique_username` (`username`) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=1726852231086505986 DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `t_link_stats_event`
+(
+    `stream_id` varchar(64) NOT NULL,
+    PRIMARY KEY (`stream_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

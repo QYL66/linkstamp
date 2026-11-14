@@ -1,12 +1,12 @@
-# LinkStamp changes: expose authenticated administration routes through the gateway.
+# LinkStamp changes: route admin requests directly to the local aggregation service.
 spring:
   cloud:
     gateway:
       server:
         webflux:
           routes:
-            - id: short-link-admin-aggregation
-              uri: http://127.0.0.1:8003
+            - id: linkstamp-admin-aggregation
+              uri: ${SHORTLINK_AGGREGATION_URL:http://127.0.0.1:8003}
               predicates:
                 - Path=/api/short-link/admin/**
               filters:

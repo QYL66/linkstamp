@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.controller;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: handle short-link creation and link operations under the LinkStamp namespace. */
 
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.baomidou.mybatisplus.core.metadata.IPage;

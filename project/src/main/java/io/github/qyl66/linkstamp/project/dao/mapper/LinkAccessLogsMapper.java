@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.dao.mapper;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: write visit timestamps and query daily and cumulative visit identity. */
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -26,6 +26,7 @@ import io.github.qyl66.linkstamp.project.dao.entity.LinkAccessStatsDO;
 import io.github.qyl66.linkstamp.project.dto.req.ShortLinkGroupStatsAccessRecordReqDTO;
 import io.github.qyl66.linkstamp.project.dto.req.ShortLinkGroupStatsReqDTO;
 import io.github.qyl66.linkstamp.project.dto.req.ShortLinkStatsReqDTO;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -37,6 +38,33 @@ import java.util.Map;
  * 访问日志监控持久层
  */
 public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
+
+    @Insert("""
+            INSERT INTO t_link_access_logs
+              (full_short_url, user, ip, browser, os, network, device, locale, create_time, update_time, del_flag)
+            VALUES
+              (#{log.fullShortUrl}, #{log.user}, #{log.ip}, #{log.browser}, #{log.os}, #{log.network}, #{log.device},
+               #{log.locale}, #{visitedAt}, #{visitedAt}, 0)
+            """)
+    void insertVisit(@Param("log") LinkAccessLogsDO log, @Param("visitedAt") String visitedAt);
+
+    @Select("""
+            SELECT COUNT(*) AS pv,
+                   COALESCE(SUM(create_time >= #{dayStart} AND create_time < #{dayEnd}), 0) AS uv
+            FROM t_link_access_logs
+            WHERE full_short_url = #{url} AND user = #{visitor}
+            """)
+    LinkAccessStatsDO countVisitor(@Param("url") String url, @Param("visitor") String visitor,
+                                  @Param("dayStart") String dayStart, @Param("dayEnd") String dayEnd);
+
+    @Select("""
+            SELECT COUNT(*) AS pv,
+                   COALESCE(SUM(create_time >= #{dayStart} AND create_time < #{dayEnd}), 0) AS uv
+            FROM t_link_access_logs
+            WHERE full_short_url = #{url} AND ip = #{ip}
+            """)
+    LinkAccessStatsDO countIp(@Param("url") String url, @Param("ip") String ip,
+                             @Param("dayStart") String dayStart, @Param("dayEnd") String dayEnd);
 
     /**
      * 根据短链接获取指定日期内高频访问IP数据

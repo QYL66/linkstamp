@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.service.impl;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: check ownership and return grouped visit statistics. */
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;

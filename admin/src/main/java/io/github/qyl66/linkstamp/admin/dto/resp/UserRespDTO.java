@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.dto.resp;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: moved the Java package to io.github.qyl66.linkstamp. */
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.github.qyl66.linkstamp.admin.common.serialize.PhoneDesensitizationSerializer;

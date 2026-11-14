@@ -17,11 +17,14 @@
 
 package io.github.qyl66.linkstamp.project.initialize;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: ensure the statistics consumer group exists without resetting its position. */
 
+import io.github.qyl66.linkstamp.project.dao.mapper.LinkStatsEventMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.connection.stream.ReadOffset;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
 import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
@@ -35,12 +38,23 @@ import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant
 public class ShortLinkStatsStreamInitializeTask implements InitializingBean {
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final LinkStatsEventMapper linkStatsEventMapper;
 
     @Override
-    public void afterPropertiesSet() throws Exception {
-        Boolean hasKey = stringRedisTemplate.hasKey(SHORT_LINK_STATS_STREAM_TOPIC_KEY);
-        if (hasKey == null || !hasKey) {
-            stringRedisTemplate.opsForStream().createGroup(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY);
+    public void afterPropertiesSet() {
+        try {
+            linkStatsEventMapper.checkTable();
+        } catch (DataAccessException ex) {
+            throw new IllegalStateException("Verify the database connection and apply resources/database/migrate-visit-stats.sql before starting LinkStamp.", ex);
+        }
+        try {
+            stringRedisTemplate.opsForStream().createGroup(
+                    SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.from("0-0"), SHORT_LINK_STATS_STREAM_GROUP_KEY);
+        } catch (DataAccessException ex) {
+            Throwable cause = ex.getMostSpecificCause();
+            if (cause.getMessage() == null || !cause.getMessage().contains("BUSYGROUP")) {
+                throw ex;
+            }
         }
     }
 }

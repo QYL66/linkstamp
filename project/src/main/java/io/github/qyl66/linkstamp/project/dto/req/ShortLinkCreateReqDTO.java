@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.dto.req;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: accept an optional custom short code in single-link creation. */
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;

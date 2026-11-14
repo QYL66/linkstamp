@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.controller;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: verify group ownership before changing recycle-bin state. */
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.github.qyl66.linkstamp.admin.common.convention.result.Result;

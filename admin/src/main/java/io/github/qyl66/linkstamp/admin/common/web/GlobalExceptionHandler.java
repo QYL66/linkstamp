@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.common.web;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: log the request path without including query parameters. */
 
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.ReflectUtil;

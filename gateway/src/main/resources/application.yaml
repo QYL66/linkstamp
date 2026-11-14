@@ -1,10 +1,10 @@
-# LinkStamp changes: local runtime settings are configurable.
+# LinkStamp changes: use the LinkStamp service name and configurable local connections.
 server:
   address: 127.0.0.1
   port: 8000
 spring:
   application:
-    name: short-link-gateway
+    name: linkstamp-gateway
   profiles:
     active: aggregation
     # active: dev

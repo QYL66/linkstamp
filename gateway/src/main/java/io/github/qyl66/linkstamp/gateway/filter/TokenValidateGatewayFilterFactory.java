@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.gateway.filter;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: resolve the minimal login session in Redis and forward account context. */
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;

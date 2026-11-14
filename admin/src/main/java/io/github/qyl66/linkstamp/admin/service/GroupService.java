@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.service;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: expose a group ownership check for management operations. */
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;

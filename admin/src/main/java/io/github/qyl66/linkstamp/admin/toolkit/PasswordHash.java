@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.toolkit;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: hash newly created passwords with salted PBKDF2 and verify legacy credentials. */
 
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;

@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.service.impl;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: derive a description from the URL host without requesting the target page. */
 
 import io.github.qyl66.linkstamp.project.service.UrlTitleService;
 import io.github.qyl66.linkstamp.project.toolkit.LinkUtil;

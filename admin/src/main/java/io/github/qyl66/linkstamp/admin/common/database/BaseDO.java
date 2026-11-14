@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.common.database;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: moved the Java package to io.github.qyl66.linkstamp. */
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;

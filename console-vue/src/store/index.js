@@ -1,4 +1,4 @@
-// LinkStamp changes: portfolio interface and local operation.
+// LinkStamp changes: read the short-link domain from Vite configuration.
 import { createStore } from 'vuex'
 
 // 创建一个新的 store 实例

@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.mq.producer;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: moved the Java package to io.github.qyl66.linkstamp. */
 
 import cn.hutool.core.lang.UUID;
 import io.github.qyl66.linkstamp.project.dto.biz.ShortLinkStatsRecordDTO;

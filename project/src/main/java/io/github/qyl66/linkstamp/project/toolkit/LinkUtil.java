@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.toolkit;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: validate HTTP and HTTPS destinations and expose the target host. */
 
 import cn.hutool.core.date.DateUnit;
 import cn.hutool.core.date.DateUtil;

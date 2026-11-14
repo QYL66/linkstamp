@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: moved the Java package to io.github.qyl66.linkstamp. */
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;

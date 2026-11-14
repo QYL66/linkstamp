@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.dto.biz;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: retain the visit timestamp and identity in the statistics event. */
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

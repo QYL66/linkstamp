@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.admin.service;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: use the MyBatis-Plus Spring service interface. */
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import io.github.qyl66.linkstamp.admin.dao.entity.UserDO;

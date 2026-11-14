@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.dao.mapper;
 
-/* LinkStamp changes: renamed the Java package and removed promotional references where present. */
+/* LinkStamp changes: derive daily visitor and IP counts from access logs. */
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import io.github.qyl66.linkstamp.project.dao.entity.LinkAccessStatsDO;
@@ -43,45 +43,25 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
             "ON DUPLICATE KEY UPDATE pv = pv +  #{linkAccessStats.pv}, uv = uv + #{linkAccessStats.uv}, uip = uip + #{linkAccessStats.uip};")
     void shortLinkStats(@Param("linkAccessStats") LinkAccessStatsDO linkAccessStatsDO);
 
-    /**
-     * 根据短链接获取指定日期内基础监控数据
-     */
-    @Select("SELECT " +
-            "    tlas.date, " +
-            "    SUM(tlas.pv) AS pv, " +
-            "    SUM(tlas.uv) AS uv, " +
-            "    SUM(tlas.uip) AS uip " +
-            "FROM " +
-            "    t_link tl INNER JOIN " +
-            "    t_link_access_stats tlas ON tl.full_short_url = tlas.full_short_url " +
-            "WHERE " +
-            "    tlas.full_short_url = #{param.fullShortUrl} " +
-            "    AND tl.gid = #{param.gid} " +
-            "    AND tl.del_flag = '0' " +
-            "    AND tl.enable_status = #{param.enableStatus} " +
-            "    AND tlas.date BETWEEN #{param.startDate} and #{param.endDate} " +
-            "GROUP BY " +
-            "    tlas.full_short_url, tl.gid, tlas.date;")
+    @Select("""
+            SELECT DATE(log.create_time) AS date, COUNT(*) AS pv,
+                   COUNT(DISTINCT log.user) AS uv, COUNT(DISTINCT log.ip) AS uip
+            FROM t_link t INNER JOIN t_link_access_logs log ON log.full_short_url = t.full_short_url
+            WHERE t.gid = #{param.gid} AND t.del_flag = 0 AND t.enable_status = #{param.enableStatus}
+              AND t.full_short_url = #{param.fullShortUrl}
+              AND log.create_time BETWEEN #{param.startDate} AND #{param.endDate}
+            GROUP BY DATE(log.create_time)
+            """)
     List<LinkAccessStatsDO> listStatsByShortLink(@Param("param") ShortLinkStatsReqDTO requestParam);
 
-    /**
-     * 根据分组获取指定日期内基础监控数据
-     */
-    @Select("SELECT " +
-            "    tlas.date, " +
-            "    SUM(tlas.pv) AS pv, " +
-            "    SUM(tlas.uv) AS uv, " +
-            "    SUM(tlas.uip) AS uip " +
-            "FROM " +
-            "    t_link tl INNER JOIN " +
-            "    t_link_access_stats tlas ON tl.full_short_url = tlas.full_short_url " +
-            "WHERE " +
-            "    tl.gid = #{param.gid} " +
-            "    AND tl.del_flag = '0' " +
-            "    AND tl.enable_status = '0' " +
-            "    AND tlas.date BETWEEN #{param.startDate} and #{param.endDate} " +
-            "GROUP BY " +
-            "    tl.gid, tlas.date;")
+    @Select("""
+            SELECT DATE(log.create_time) AS date, COUNT(*) AS pv,
+                   COUNT(DISTINCT log.user) AS uv, COUNT(DISTINCT log.ip) AS uip
+            FROM t_link t INNER JOIN t_link_access_logs log ON log.full_short_url = t.full_short_url
+            WHERE t.gid = #{param.gid} AND t.del_flag = 0 AND t.enable_status = 0
+              AND log.create_time BETWEEN #{param.startDate} AND #{param.endDate}
+            GROUP BY DATE(log.create_time)
+            """)
     List<LinkAccessStatsDO> listStatsByGroup(@Param("param") ShortLinkGroupStatsReqDTO requestParam);
 
     /**

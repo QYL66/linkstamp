@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- LinkStamp changes: updated the Java package namespace. -->
+<!-- LinkStamp changes: join the current day's counts and sort by today's or cumulative traffic. -->
 <!--
   ~ Licensed to the Apache Software Foundation (ASF) under one or more
   ~ contributor license agreements.  See the NOTICE file distributed with
@@ -39,7 +39,7 @@
         COALESCE(s.today_uip, 0) AS todayUip
         FROM t_link t
         LEFT JOIN t_link_stats_today s ON t.full_short_url = s.full_short_url
-        AND s.date = CURDATE()
+        AND s.date = DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR)
         WHERE t.gid = #{gid}
         AND t.enable_status = 0
         AND t.del_flag = 0
@@ -78,7 +78,7 @@
         COALESCE(s.today_uip, 0) AS todayUip
         FROM t_link t
         LEFT JOIN t_link_stats_today s ON t.full_short_url = s.full_short_url
-        AND s.date = CURDATE()
+        AND s.date = DATE(UTC_TIMESTAMP() + INTERVAL 8 HOUR)
         WHERE t.gid IN
         <foreach item='item' index='index' collection='gidList' open='(' separator=',' close=')'>
             #{item}
