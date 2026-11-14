@@ -1,5 +1,5 @@
 <template>
-  <div style="width: 100%; display: flex; flex-direction: column;">
+  <div class="stat-card">
     <div class="title-box">
       <span>{{ title }}</span>
       <slot name="titleButton">
@@ -26,27 +26,20 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
+.stat-card { border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; }
 .title-box {
   display: flex;
   position: relative;
   justify-content: space-between;
   align-items: center;
   height: 50px;
-  border-bottom: 2px solid rgba(0, 0, 0, .1);
+  border-bottom: 1px solid var(--line);
   padding: 15px 20px;
-  color: #3464e0;
-  font-size: 18px;
+  color: #254bc3;
+  font-size: 15px;
+  font-weight: 650;
 }
-.title-box::before {
-  content: '';
-  position: absolute;
-  height: 5px;
-  width: 100px;
-  left: 0;
-  background-color: #78dffc;;
-  z-index: 99;
-  bottom: -1px;
-}
+
 .content-box {
   flex: 1;
 }

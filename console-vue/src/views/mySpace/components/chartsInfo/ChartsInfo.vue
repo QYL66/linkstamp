@@ -1,35 +1,22 @@
 <!-- LinkStamp changes: show actual region statistics without bundled map data. -->
 <template>
-  <el-dialog v-model="dialogVisible" :title="props.title" width="70%" :before-close="handleClose">
-    <template #header>
-      <div style="display: flex">
-        <el-icon v-if="!isGroup" size="25" aria-hidden="true"><Link /></el-icon>
-        <div style="display: flex; flex-direction: column; margin-left: 5px">
-          <span style="font-size: 25px; line-height: 25px; font-weight: 550">{{
-            props.title
-          }}</span>
-          <span v-if="!isGroup" style="margin-top: 5px; font-size: 15px">{{
-            props.originUrl
-          }}</span>
-        </div>
-      </div>
-      <span v-if="isGroup" style="margin: 5px 0 0 5px">共{{ props.nums }}条短链接</span>
-    </template>
-    <div style="position: absolute; right: 30px; z-index: 999">
-      <el-date-picker v-model="dateValue" :clearable="true" type="daterange" range-separator="To" start-placeholder="开始时间"
-        end-placeholder="结束时间" value-format="YYYY-MM-DD" :shortcuts="shortcuts" :size="size" />
+  <el-dialog v-model="dialogVisible" :title="props.title" width="960px" destroy-on-close @closed="resetView">
+    <div class="stats-toolbar">
+      <p>{{ isGroup ? '共 ' + props.nums + ' 条短链' : props.originUrl }}</p>
+      <el-date-picker v-model="dateValue" type="daterange" range-separator="至" start-placeholder="开始日期"
+        end-placeholder="结束日期" value-format="YYYY-MM-DD" :shortcuts="shortcuts" @change="updateDates" />
     </div>
-    <!-- 具体展示内容 -->
+
     <el-tabs v-model="showPane">
       <!-- 切换， name用于确定展示哪个标签，和showPane对应 -->
       <el-tab-pane name="访问数据" label="访问数据">
         <!-- 数据图表 -->
-        <div class="content-box scroll-box" style="height: calc(100vh - 280px); overflow: scroll">
+        <div class="stats-grid">
           <!-- 访问曲线 -->
-          <TitleContent class="chart-item" style="width: 800px" title="访问曲线" @onMounted="initLineChart">
+          <TitleContent class="chart-item chart-wide" title="访问趋势">
             <template v-slot:titleButton>
               <div>
-                <el-button @click="isLine = !isLine">切换为曲线</el-button>
+                <el-button @click="isLine = !isLine">{{ isLine ? '查看表格' : '查看曲线' }}</el-button>
               </div>
             </template>
             <template #content>
@@ -49,10 +36,10 @@
                   </div>
                 </div>
                 <!-- 折线图 -->
-                <div v-show="isLine" class="lineChart"></div>
+                <div v-show="isLine" ref="lineChartEl" class="line-chart"></div>
                 <!-- 表格 -->
-                <div v-show="!isLine" style="padding: 20px">
-                  <el-table :data="visitsData" border style="width: 100%; height: 210px; overflow: scroll"
+                <div v-show="!isLine" style="padding: 12px; grid-column: 1 / -1">
+                  <el-table :data="visitsData" border max-height="240"
                     :header-cell-style="{ background: '#eef1f6', color: '#606266' }">
                     <el-table-column prop="date" label="时间" width="160" />
                     <el-table-column prop="pv" label="访问次数" width="160" />
@@ -63,9 +50,9 @@
               </div>
             </template>
           </TitleContent>
-          <TitleContent class="chart-item" style="width: 800px" title="访问地区">
+          <TitleContent class="chart-item" title="访问地区">
             <template #content>
-              <el-table :data="localeRows" max-height="245" empty-text="所选日期内没有地区数据">
+              <el-table :data="localeRows" max-height="245" empty-text="当前没有可展示的地区数据">
                 <el-table-column prop="locale" label="地区" />
                 <el-table-column prop="cnt" label="访问次数" />
                 <el-table-column label="占比">
@@ -75,9 +62,9 @@
             </template>
           </TitleContent>
           <!-- 24小时分布 -->
-          <TitleContent class="chart-item" title="24小时分布" style="width: 800px">
+          <TitleContent class="chart-item" title="24小时分布">
             <template #content>
-              <BarChart style="height: 100%; width: 100%" :chartData="{
+              <BarChart :chartData="{
                 xAxis: [
                   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
                   22, 23
@@ -87,53 +74,47 @@
             </template>
           </TitleContent>
           <!-- 高频访问IP -->
-          <TitleContent class="chart-item" title="高频访问IP" style="width: 390px">
+          <TitleContent class="chart-item" title="高频访问IP">
             <template #content>
               <KeyValue :dataLists="props.info?.topIpStats" style="height: 100%; width: 100%"></KeyValue>
             </template>
           </TitleContent>
           <!-- 一周分布 -->
-          <TitleContent class="chart-item" title="一周分布" style="width: 390px">
+          <TitleContent class="chart-item" title="一周分布">
             <template #content>
-              <BarChart style="height: 100%; width: 100%" :chartData="{
+              <BarChart :chartData="{
                 xAxis: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
                 value: props.info?.weekdayStats || new Array(7).fill(0)
               }"></BarChart>
             </template>
           </TitleContent>
 
-          <!-- 访问来源TOP5 -->
-          <!-- <TitleContent class="chart-item" title="访问来源 TOP5" style="width: 390px">
-            <template #content>
-              <KeyValue :data-lists="IPdataList" style="height: 100%; width: 100%;"></KeyValue>
-            </template>
-          </TitleContent> -->
           <!-- 操作系统 -->
-          <TitleContent class="chart-item" title="操作系统" style="width: 390px">
+          <TitleContent class="chart-item" title="操作系统">
             <template #content>
               <ProgressLine style="height: 100%; width: 100%" :dataLists="props.info?.osStats"></ProgressLine>
             </template>
           </TitleContent>
           <!-- 访问浏览器 -->
-          <TitleContent class="chart-item" title="访问浏览器" style="width: 390px">
+          <TitleContent class="chart-item" title="访问浏览器">
             <template #content>
               <ProgressLine style="height: 100%; width: 100%" :dataLists="props.info?.browserStats"></ProgressLine>
             </template>
           </TitleContent>
           <!-- 访客类型 -->
-          <TitleContent v-if="!isGroup" class="chart-item" title="访客类型" style="width: 390px">
+          <TitleContent v-if="!isGroup" class="chart-item" title="访客类型">
             <template #content>
               <ProgressPie style="height: 100%; width: 100%" :labels="['新访客', '旧访客']" :data="userTypeList"></ProgressPie>
             </template>
           </TitleContent>
           <!-- 访问网络 -->
-          <TitleContent class="chart-item" title="访问网络" style="width: 390px">
+          <TitleContent class="chart-item" title="访问网络">
             <template #content>
               <ProgressPie style="height: 100%; width: 100%" :labels="['WIFI', '移动数据']" :data="netWorkList"></ProgressPie>
             </template>
           </TitleContent>
           <!-- 访问设备 -->
-          <TitleContent class="chart-item" title="访问设备" style="width: 390px">
+          <TitleContent class="chart-item" title="访问设备">
             <template #content>
               <ProgressPie style="height: 100%; width: 100%" :labels="['电脑', '移动设备']" :data="deviceList"></ProgressPie>
             </template>
@@ -141,7 +122,7 @@
         </div>
       </el-tab-pane>
       <el-tab-pane name="历史记录" label="历史记录">
-        <el-table :data="tableInfo?.data?.data?.records" style="width: 100%; height: calc(100vh - 300px)">
+        <el-table :data="tableInfo?.data?.data?.records ?? []" max-height="480">
           <el-table-column prop="createTime" label="访问时间" width="160" />
           <el-table-column prop="ip" label="访问IP" width="140" />
           <el-table-column prop="locale" label="访客地区"> </el-table-column>
@@ -159,7 +140,7 @@
         <div class="pagination-block">
           <el-pagination v-model:current-page="pageParams.current" v-model:page-size="pageParams.size"
             :page-sizes="[10, 15, 20, 30]" layout="total, sizes, prev, pager, next, jumper" :total="totalNums"
-            @size-change="handleSizeChange" @current-change="handleCurrentChange" />
+            @size-change="updatePageSize" @current-change="updatePage" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -167,7 +148,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, reactive } from 'vue'
+import { computed, nextTick, ref, watch, reactive } from 'vue'
 import TitleContent from './TitleContent.vue'
 import * as echarts from 'echarts'
 import BarChart from './BarChart.vue'
@@ -214,90 +195,46 @@ const shortcuts = [
     }
   }
 ]
-const dailyXAxis = ref()
-// const dailyXAxis = ref([])
+const dailyXAxis = ref([])
 const showPane = ref('访问数据')
-const dateValue = ref([getLastWeekFormatDate(), getTodayFormatDate()])
+const defaultRange = () => [getLastWeekFormatDate().slice(0, 10), getTodayFormatDate().slice(0, 10)]
+const dateValue = ref(defaultRange())
 const emit = defineEmits(['changeTime', 'changePage'])
-watch(
-  () => dateValue.value,
-  (newValue) => {
-    // 解决首次关闭数据统计页面需要点两次关闭键的bug
-    if (!newValue && !dialogVisible.value) {
-      return
-    }
-    emit('changeTime', newValue)
-  }
-)
 const props = defineProps({
-  title: {
-    type: String,
-    default: '默认标题'
-  },
+  title: String,
   info: Object,
   tableInfo: Object,
   isGroup: Boolean,
   nums: Number,
   originUrl: String
 })
-const pageParams = reactive({
-  current: 1,
-  size: 10
-})
-const totalNums = ref(0)
-watch(
-  () => props.tableInfo,
-  () => {
-    totalNums.value = props?.tableInfo?.data?.data?.total
-  }
-)
-watch(
-  () => pageParams,
-  (newValue) => {
-    // 解决首次关闭数据统计页面需要点两次关闭键的bug
-    if (!newValue && !dialogVisible.value) {
-      return
-    }
-    emit('changePage', newValue)
-  },
-  {
-    deep: true
-  }
-)
-// const title = ref(props.title)
-// const info = ref(props.info)
-
-// watch(
-//   () => {
-//     props.info
-//   },
-//   () => {
-//     console.log(props.info, props.title)
-//     info.value = props.info
-//     title.value = props.title
-//   },
-//   {
-//     deep: true,
-//   }
-// )
+const pageParams = reactive({ current: 1, size: 10 })
+const totalNums = computed(() => Number(props.tableInfo?.data?.data?.total ?? 0))
 const dialogVisible = ref(false)
-const handleClose = () => {
-  dateValue.value = null
-  unVisible()
-  showPane.value = '访问数据'
-  dateValue.value = [getLastWeekFormatDate(), getTodayFormatDate()]
-  document.querySelector('.scroll-box').scrollTop = 0
+
+function updateDates(dates) {
+  pageParams.current = 1
+  if (!dates) dateValue.value = defaultRange()
+  emit('changeTime', dateValue.value)
 }
-const isVisible = () => {
+function updatePage() {
+  if (dialogVisible.value) emit('changePage', { ...pageParams })
+}
+function updatePageSize() {
+  pageParams.current = 1
+  updatePage()
+}
+function resetView() {
+  dateValue.value = defaultRange()
+  pageParams.current = 1
+  pageParams.size = 10
+  showPane.value = '访问数据'
+  isLine.value = true
+}
+function isVisible() {
   dialogVisible.value = true
 }
-const unVisible = () => {
-  dialogVisible.value = false
-}
-defineExpose({
-  unVisible,
-  isVisible
-})
+defineExpose({ isVisible })
 
 const localeRows = computed(() => [...(props.info?.localeCnStats ?? [])]
   .sort((left, right) => right.cnt - left.cnt)
@@ -307,9 +244,12 @@ const localeRows = computed(() => [...(props.info?.localeCnStats ?? [])]
 const isLine = ref(true)
 // 访问曲线数据请求
 const initLineChart = () => {
-  const lineChartDom = document.querySelector('.lineChart')
-  const lineChart = echarts.init(lineChartDom)
+  const element = lineChartEl.value
+  if (!element || !element.clientWidth || !isLine.value) return
+  const lineChart = echarts.getInstanceByDom(element) || echarts.init(element)
+  lineChart.resize()
   let option = {
+    color: ['#254bc3', '#7989bd', '#96623f'],
     title: {
       show: false,
       text: 'Stacked Line'
@@ -354,16 +294,28 @@ const initLineChart = () => {
   }
   lineChart.setOption(option)
 }
+const lineChartEl = ref()
+watch(lineChartEl, (element, previous, onCleanup) => {
+  if (!element) return
+  const observer = new ResizeObserver(initLineChart)
+  observer.observe(element)
+  onCleanup(() => {
+    observer.disconnect()
+    echarts.getInstanceByDom(element)?.dispose()
+  })
+})
+watch([isLine, showPane], () => nextTick(initLineChart))
+
 // 总访问次数
-const totalPv = ref(0)
+const totalPv = computed(() => props.info?.pv ?? 0)
 // 访问次数数据集数组
 const pvList = ref([])
 // 总访问人数
-const totalUv = ref(0)
+const totalUv = computed(() => props.info?.uv ?? 0)
 // 访问人数数据集数组
 const uvList = ref([])
 // 总访问IP数
-const totalUip = ref(0)
+const totalUip = computed(() => props.info?.uip ?? 0)
 // 访问IP数数据集数组
 const uipList = ref([])
 // 更新数据
@@ -371,9 +323,6 @@ watch(
   () => props?.info?.daily,
   () => {
     // 归零
-    totalPv.value = 0
-    totalUv.value = 0
-    totalUip.value = 0
     pvList.value = []
     uvList.value = []
     uipList.value = []
@@ -383,15 +332,12 @@ watch(
     visitsData?.value?.forEach((item) => {
       const { pv, uv, uip, date } = item
       const formDate = date.split('-')[1] + '月' + date.split('-')[2] + '日'
-      totalPv.value += pv
-      totalUv.value += uv
-      totalUip.value += uip
       pvList.value.push(pv)
       uvList.value.push(uv)
       uipList.value.push(uip)
       dailyXAxis.value.push(formDate)
     })
-    initLineChart()
+    void nextTick(initLineChart)
   }
 )
 // 访问表格数据
@@ -441,7 +387,7 @@ watch(
     netWorkList.value = [0, 0]
     // 对访问设备类型的数据进行转化
     props.info?.networkStats?.forEach((item) => {
-      if (item.device === 'Mobile') {
+      if (item.network === 'Mobile') {
         netWorkList.value[1] = item.cnt
       } else {
         netWorkList.value[0] = item.cnt
@@ -454,75 +400,22 @@ watch(
 )
 </script>
 
-<style lang="less" scoped>
-.content-box {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  width: 100%;
-
-  .chart-item {
-    height: 300px;
-    min-width: 300px;
-    margin: 10px;
-  }
-}
-
-
-
-.list-chart {
-  display: flex;
-  justify-content: space-between;
-
-  .top10 {
-    padding: 15px 30px;
-    width: 400px;
-    height: 270px;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-
-    .top-item {
-      display: flex;
-      flex-direction: column;
-      flex-wrap: wrap;
-
-      div {
-        height: 40px;
-        display: flex;
-        align-items: center;
-        margin-right: 30px;
-      }
-    }
-
-    span:nth-child(1) {
-      color: #3464e0;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .key-value {
-      display: flex;
-      justify-content: space-between;
-      width: 150px;
-    }
-  }
-}
-
-.lineChart {
-  margin: 10px;
-  width: 600px;
-  height: 200px;
-}
-
-.flex-box {
-  display: flex;
-  justify-content: space-around;
-}
-
-.pagination-block {
-  .el-pagination {
-    margin-left: 20%;
-  }
+<style scoped>
+.stats-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
+.stats-toolbar p { color: var(--muted); overflow-wrap: anywhere; }
+.stats-toolbar :deep(.el-date-editor) { max-width: 100%; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-height: 62dvh; overflow: auto; padding: 2px 5px 5px 2px; }
+.chart-item { min-width: 0; min-height: 175px; }
+.chart-wide { grid-column: 1 / -1; }
+.list-chart { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: stretch; }
+.top10 { padding: 10px 13px; font-variant-numeric: tabular-nums; }
+.key-value { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.key-value span + span { color: var(--ink); font-weight: 700; }
+.line-chart { width: 100%; min-width: 0; height: 215px; }
+.pagination-block { margin-top: 12px; overflow-x: auto; }
+@media (max-width: 640px) {
+  .stats-grid { grid-template-columns: minmax(0, 1fr); }
+  .list-chart { grid-template-columns: minmax(0, 1fr); }
+  .top10 { display: flex; flex-wrap: wrap; gap: 10px; }
 }
 </style>

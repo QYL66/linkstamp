@@ -1,12 +1,12 @@
 <template>
   <!-- 柱状图 -->
-  <div ref="barChartRef">
+  <div class="barChart" ref="barChartRef">
   </div>
 </template>
 
 <script setup>
 import * as echarts from 'echarts'
-import { onMounted, nextTick, ref, watch } from 'vue'
+import { onMounted, onUnmounted, nextTick, ref, watch } from 'vue'
 const props = defineProps({
   chartData: {
     type: Object,
@@ -26,7 +26,9 @@ watch(
 const barChartRef = ref()
 const initChart = () => {
   const barDom = barChartRef.value
-  const barChart = echarts.init(barDom)
+  if (!barDom?.clientWidth) return
+  const barChart = echarts.getInstanceByDom(barDom) || echarts.init(barDom)
+  barChart.resize()
   const option = {
     tooltip: {
       trigger: 'axis',
@@ -72,11 +74,7 @@ const initChart = () => {
         type: 'bar',
         barWidth: '10px',
         itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#83bff6' },
-            { offset: 0.5, color: '#188df0' },
-            { offset: 1, color: '#188df0' }
-          ])
+          color: '#526ed4', borderRadius: [3, 3, 0, 0]
         },
         showBackground: true,
         backgroundStyle: {
@@ -87,16 +85,21 @@ const initChart = () => {
   };
   barChart.setOption(option)
 }
+let observer
 onMounted(() => {
-  nextTick(() => {
-    initChart()
-  })
+  observer = new ResizeObserver(initChart)
+  observer.observe(barChartRef.value)
+  void nextTick(initChart)
+})
+onUnmounted(() => {
+  observer?.disconnect()
+  if (barChartRef.value) echarts.getInstanceByDom(barChartRef.value)?.dispose()
 })
 </script>
 
 <style lang="scss" scoped>
 .barChart {
   width: 100%;
-  height: 100%;
+  height: 185px;
 }
 </style>

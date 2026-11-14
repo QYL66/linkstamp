@@ -1,6 +1,6 @@
 <template>
   <div class="main-box">
-    <el-progress color="#3464e0" type="circle" :stroke-width="10" :percentage="data1Precentage">
+    <el-progress color="#254bc3" type="circle" :stroke-width="10" :percentage="data1Precentage">
       <template #default>
         <div class="flex-box">
           <span class="percentage-value">{{ labels[0] }}: {{ data1Precentage }}%</span>
@@ -8,7 +8,7 @@
         </div>
       </template>
     </el-progress>
-    <el-progress color="#3464e0" type="circle" :stroke-width="10" :percentage="data2Precentage">
+    <el-progress color="#254bc3" type="circle" :stroke-width="10" :percentage="data2Precentage">
       <template #default>
         <div class="flex-box">
           <span class="percentage-value">{{ labels[1] }}: {{ data2Precentage }}%</span>
@@ -20,7 +20,7 @@
 </template>
 
 <script setup>
-import { watch, ref } from 'vue'
+import { computed } from 'vue'
 const props = defineProps({
   labels: {
     type: Array,
@@ -33,33 +33,13 @@ const props = defineProps({
     default: [10, 0]
   }
 })
-const data1 = props.data[0]
-const data2 = props.data[1]
+const percentage = (index) => computed(() => {
+  const total = Number(props.data[0]) + Number(props.data[1])
+  return total ? Math.round(Number(props.data[index]) * 100 / total) : 0
+})
+const data1Precentage = percentage(0)
+const data2Precentage = percentage(1)
 
-const data1Precentage = ref(0)
-const data2Precentage = ref(0)
-watch(
-  () => props.data,
-  () => {
-    const data1 = props.data[0]
-    const data2 = props.data[1]
-    // 分别计算不同的百分比
-    data1Precentage.value = (function () {
-      if (data1 === 0) {
-        return 0
-      } else {
-        return ((data1 / (data1 + data2)) * 100).toFixed(0)
-      }
-    })()
-    data2Precentage.value = (function () {
-      if (data2 === 0) {
-        return 0
-      } else {
-        return ((data2 / (data1 + data2)) * 100).toFixed(0)
-      }
-    })()
-  }
-)
 </script>
 
 <style lang="scss" scoped>
@@ -68,6 +48,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .flex-box {

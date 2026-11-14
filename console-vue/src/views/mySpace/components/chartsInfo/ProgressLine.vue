@@ -14,7 +14,7 @@
         </div>
         <div>
           <el-progress
-            color="#3464e0"
+            color="#254bc3"
             :text-inside="true"
             :show-text="false"
             :stroke-width="12"

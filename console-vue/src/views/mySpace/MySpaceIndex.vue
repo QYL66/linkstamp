@@ -1,1107 +1,590 @@
-<!-- LinkStamp changes: portfolio interface and local operation. -->
+<!-- LinkStamp changes: redesign the short-link workspace and improve request states. -->
 <template>
-  <div style="display: flex; height: 100%">
-    <div class="options-box">
-      <div class="option-title flex-box">
-        <div>
-          短链分组<span> 共{{ editableTabs?.length }}组</span>
-        </div>
-        <div class="hover-box" style="width: 24px" @click="showAddGroup">
-          <el-icon size="20"><CirclePlus /></el-icon>
-        </div>
+  <div class="console-page">
+    <header class="page-heading">
+      <div class="page-title">
+        <h1>短链管理</h1>
+        <p v-if="isRecycleBin">查看已移除的短链</p>
+        <p v-else-if="activeGroup">当前分组 <strong>{{ activeGroup.name }}</strong></p>
       </div>
-      <!-- 拖动选项 -->
-      <ul class="sortOptions">
-        <li v-for="(item, index) in editableTabs" :key="item.gid">
-          <div class="item-box flex-box hover-box" :class="{ selectedItem: selectedIndex === index }"
-            @click="changeSelectIndex(index)">
-            <div style="display: flex">
-              <el-icon style="margin-right: 3px"><Rank /></el-icon>
-              <span class="over-text">{{ item.name }}</span>
-            </div>
-            <div class="flex-box">
-              <!-- 图标 -->
-              <el-tooltip show-after="500" class="box-item" effect="dark" :content="'查看图表'" placement="bottom-end">
-                <!-- 传group是为了表示这个请求是查询分组图表数据 -->
-                <el-icon v-if="!(item.shortLinkCount === 0 || item.shortLinkCount === null)" class="edit"
-                  :class="{ zero: item.shortLinkCount === 0 }"
-                  @click="chartsVisible({ describe: item.name, gid: item.gid, group: true })">
-                  <Histogram />
-                </el-icon>
-              </el-tooltip>
-              <!-- 编辑按钮 -->
-              <el-dropdown>
-                <div class="block">
-                  <el-icon class="edit" v-if="item.title !== '默认分组'">
-                    <Tools />
-                  </el-icon>
-                </div>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item @click="showEditGroup(item.gid, item.name)">编辑</el-dropdown-item>
-                    <el-dropdown-item @click="deleteGroup(item.gid)">删除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <span class="item-length">{{ item.shortLinkCount ?? 0 }}</span>
-            </div>
-          </div>
-        </li>
-      </ul>
-      <div class="recycle-bin">
-        <!-- 当selectIndex等于-1时代表选中的是回收站 -->
-        <div class="recycle-box hover-box" :class="{ selectedItem: selectedIndex === -1 }" @click="recycleBin">
-          回收站
-          <el-icon style="margin-left: 5px; font-size: 20px">
-            <Delete />
-          </el-icon>
-        </div>
+      <div v-if="!isRecycleBin" class="page-actions">
+        <el-button :disabled="!activeGroup" @click="isAddSmallLinks = true"><el-icon><Upload /></el-icon> 批量创建</el-button>
+        <el-button type="primary" :disabled="!activeGroup" @click="isAddSmallLink = true"><el-icon><Plus /></el-icon> 创建短链</el-button>
       </div>
-    </div>
-    <!-- 主要数据展示区域 -->
-    <div class="content-box">
-      <div class="table-box">
-        <!-- 默认展示创建短链输入框和按钮 -->
-        <div v-if="!isRecycleBin" class="buttons-box">
-          <div style="width: 100%; display: flex">
-            <!-- <el-input style="flex: 1; margin-right: 20px" placeholder="请输入http://或https://开头的连接或引用跳转程序"></el-input> -->
-            <el-button class="addButton" type="primary" style="width: 130px; margin-right: 10px"
-              @click="isAddSmallLink = true">创建短链</el-button>
-            <el-button style="width: 130px; margin-right: 10px" @click="isAddSmallLinks = true">批量创建</el-button>
+    </header>
+    <dl v-if="!isRecycleBin && activeGroup" class="overview" aria-label="分组概览">
+      <div>
+        <dt><el-icon><Link /></el-icon> 分组内短链</dt>
+        <dd>{{ formatMetric(activeGroup.shortLinkCount ?? 0) }}</dd>
+      </div>
+      <div>
+        <dt><el-icon><Histogram /></el-icon> 近 7 天访问次数</dt>
+        <dd>{{ formatMetric(overview?.pv) }}</dd>
+      </div>
+      <div>
+        <dt><el-icon><User /></el-icon> 近 7 天访客数</dt>
+        <dd>{{ formatMetric(overview?.uv) }}</dd>
+      </div>
+    </dl>
+    <div class="console-grid">
+      <aside class="group-panel" aria-label="短链分组">
+        <div class="group-heading">
+          <h2>短链分组</h2>
+          <button class="icon-button" type="button" aria-label="新建分组" title="新建分组" @click="showAddGroup"><el-icon><Plus /></el-icon></button>
+        </div>
+        <ul ref="groupList" class="group-list">
+          <li v-for="item in editableTabs" :key="item.gid" :class="{ selected: !isRecycleBin && activeGid === item.gid }">
+            <span class="drag-handle" title="拖动排序" aria-hidden="true"><el-icon><Rank /></el-icon></span>
+            <button type="button" class="group-button" :aria-current="!isRecycleBin && activeGid === item.gid ? 'true' : undefined" @click="selectGroup(item.gid)">
+              <el-icon><Folder /></el-icon>
+              <span>{{ item.name }}</span>
+              <small>{{ item.shortLinkCount ?? 0 }}</small>
+            </button>
+            <el-dropdown trigger="click">
+              <button class="icon-button group-menu" type="button" :aria-label="item.name + '的分组操作'"><el-icon><MoreFilled /></el-icon></button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="chartsVisible({ describe: item.name, gid: item.gid, group: true })">分组统计</el-dropdown-item>
+                  <el-dropdown-item @click="showEditGroup(item.gid, item.name)">编辑分组</el-dropdown-item>
+                  <el-dropdown-item divided @click="deleteGroup(item)">删除分组</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </li>
+        </ul>
+        <button type="button" class="recycle-button" :class="{ selected: isRecycleBin }" :aria-current="isRecycleBin ? 'page' : undefined" @click="openRecycleBin">
+          <el-icon><Delete /></el-icon> 回收站
+        </button>
+      </aside>
+      <section class="link-panel" aria-labelledby="link-section-title">
+        <div class="link-heading">
+          <div>
+            <h2 id="link-section-title">{{ isRecycleBin ? '回收站' : activeGroup?.name || '短链接' }}</h2>
+            <p v-if="isRecycleBin">恢复短链，或将它从回收站移除。</p>
+            <p v-else>{{ totalNums }} 条短链</p>
+          </div>
+          <div v-if="!isRecycleBin && activeGroup" class="list-tools">
+            <el-button @click="chartsVisible({ describe: activeGroup.name, gid: activeGid, group: true })"><el-icon><Histogram /></el-icon> 分组统计</el-button>
+            <el-select v-model="pageParams.orderTag" class="sort-select" aria-label="短链排序" @change="changeSort">
+              <el-option v-for="option in sortOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
           </div>
         </div>
-        <!-- 展示回收站信息 -->
-        <div v-else class="recycle-bin-box">
-          <span>回收站</span>
-          <span>共{{ recycleBinNums }}条短链接</span>
+        <el-skeleton v-if="loading && !tableData.length" class="table-loading" :rows="4" animated />
+        <div v-else-if="pageError" class="empty-state" role="alert">
+          <el-icon><Warning /></el-icon>
+          <strong>短链加载失败</strong>
+          <p>{{ pageError }}</p>
+          <el-button @click="loadWorkspace">重试</el-button>
         </div>
-        <!-- 表格展示区域 -->
-        <el-table :data="tableData" height="calc(100vh - 240px)" style="width: calc(100vw - 230px)"
-          :header-cell-style="{ background: '#f7f8fa', color: '#606266' }">
-          <!-- 数据为空时展示的内容 -->
-          <template #empty>
-            <div style="height: 60vh; display: flex; align-items: center; justify-content: center">
-              暂无链接
-            </div>
-          </template>
-          <el-table-column type="selection" width="35" />
-          <el-table-column label="短链接信息" prop="info" min-width="300">
-            <template #header>
-              <el-dropdown>
-                <div :class="{ orderIndex: orderIndex === 0 }" class="block" style="margin-top: 3px">
-                  <span>短链接信息</span>
-                  <el-icon>
-                    <CaretBottom />
-                  </el-icon>
+        <div v-else-if="!tableData.length" class="empty-state">
+          <el-icon><Link /></el-icon>
+          <strong>{{ isRecycleBin ? '回收站是空的' : '这里还没有短链接' }}</strong>
+          <p>{{ isRecycleBin ? '移入回收站的链接会出现在这里。' : '创建短链接后，就可以分享并查看访问数据。' }}</p>
+          <el-button v-if="!isRecycleBin" type="primary" @click="activeGroup ? isAddSmallLink = true : showAddGroup()">
+            {{ activeGroup ? '创建短链' : '新建分组' }}
+          </el-button>
+        </div>
+        <el-table v-else :data="tableData" v-loading="loading" class="link-table" aria-label="短链接列表">
+          <el-table-column label="短链与目标网址" min-width="270">
+            <template #default="{ row }">
+              <div class="link-cell">
+                <span class="link-icon"><el-icon><Link /></el-icon></span>
+                <div class="link-text">
+                  <strong :title="row.describe">{{ row.describe || row.shortUri }}</strong>
+                  <a v-if="!isRecycleBin && !isExpired(row)" :href="shortUrl(row)" target="_blank" rel="noopener noreferrer" :title="shortUrl(row)">{{ row.fullShortUrl }} ↗</a>
+                  <span v-else class="inactive-link">{{ row.fullShortUrl }}</span>
+                  <span class="origin-url" :title="row.originUrl">{{ row.originUrl }}</span>
                 </div>
-                <template #dropdown>
-                  <el-dropdown-item @click="pageParams.orderTag = null, orderIndex = 0">创建时间</el-dropdown-item>
-                </template>
-              </el-dropdown>
-            </template>
-            <template #default="scope">
-              <div class="table-link-box" :class="{
-                isExpire: scope?.row?.validDateType === 1 && !isExpire(scope?.row?.validDate)
-              }">
-                <el-icon size="20" aria-hidden="true"><Link /></el-icon>
-                <div class="name-date">
-                  <el-tooltip show-after="500" :content="scope.row.describe">
-                    <span>{{ scope.row.describe }}</span>
-                  </el-tooltip>
-                  <div class="time" style="display: flex">
-                    <span>{{ scope.row.createTime }}</span>
-                    <el-tooltip show-after="500" v-if="scope?.row?.validDate" :content="'到期时间：' + scope?.row?.validDate">
-                      <el-icon v-if="isExpire(scope?.row?.validDate)" size="18"><Timer /></el-icon>
-                      <div v-else><span>已失效</span></div>
-                    </el-tooltip>
-                  </div>
+              </div>
+              <div v-if="compact" class="compact-actions">
+                <div class="compact-metrics">
+                  <span class="status" :class="{ inactive: isRecycleBin || isExpired(row) }">{{ linkStatus(row) }}</span>
+                  <span>访问 {{ row.totalPv ?? 0 }} · 访客 {{ row.totalUv ?? 0 }} · IP {{ row.totalUip ?? 0 }}</span>
                 </div>
+                <LinkActions :url="shortUrl(row)" :is-recycle-bin="isRecycleBin"
+                @stats="chartsVisible(row)" @copy="copyUrl(shortUrl(row))" @edit="editLink(row)"
+                @trash="applyLinkAction(row, 'toRecycleBin', '已移入回收站')"
+                @restore="applyLinkAction(row, 'recoverLink', '已恢复短链')"
+                @remove="applyLinkAction(row, 'removeLink', '已删除短链')" />
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="短链接网址" prop="url" min-width="300">
-            <template #default="scope">
-              <div class="table-url-box">
-                <!-- 当失效后就不能在点击跳转了 -->
-                <el-link type="primary" :underline="false" target="_blank"
-                  :disabled="scope?.row?.validDateType === 1 && !isExpire(scope?.row?.validDate)"
-                  :href="'http://' + scope.row.fullShortUrl">{{ scope.row.domain + '/' + scope.row.shortUri }}</el-link>
-                <el-tooltip show-after="500" :content="scope.row.originUrl">
-                  <span>{{ scope.row.originUrl }}</span>
-                </el-tooltip>
-              </div>
+          <el-table-column v-if="!compact" label="状态" width="88">
+            <template #default="{ row }">
+              <span class="status" :class="{ inactive: isRecycleBin || isExpired(row) }">{{ linkStatus(row) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="copy" width="170">
-            <template #default="scope">
-              <div style="display: flex; align-items: center">
-                <!-- 二维码 -->
-                <QRCode :url="'http://' + scope.row.fullShortUrl"></QRCode>
-                <!-- 表格中的复制链接按钮 -->
-                <el-tooltip show-after="500" class="box-item" effect="dark" content="复制链接" placement="bottom-end">
-                  <el-icon @click="copyUrl('http://' + scope.row.fullShortUrl)" class="table-edit copy-url">
-                    <Share />
-                  </el-icon>
-                </el-tooltip>
-              </div>
-            </template>
+          <el-table-column v-if="!compact" label="访问次数" width="101">
+            <template #default="{ row }"><div class="metric"><strong>{{ row.totalPv ?? 0 }}</strong><small>今日 {{ row.todayPv ?? 0 }}</small></div></template>
           </el-table-column>
-          <el-table-column label="访问次数" prop="times" width="120">
-            <template #header>
-              <el-dropdown>
-                <div :class="{ orderIndex: orderIndex === 1 }" class="block" style="margin-top: 3px">
-                  <span>访问次数</span>
-                  <el-icon>
-                    <CaretBottom />
-                  </el-icon>
-                </div>
-                <template #dropdown>
-                  <el-dropdown-item @click="pageParams.orderTag = 'todayPv', orderIndex = 1">今日访问次数</el-dropdown-item>
-                  <el-dropdown-item @click="pageParams.orderTag = 'totalPv', orderIndex = 1">累计访问次数</el-dropdown-item>
-                </template>
-              </el-dropdown>
-            </template>
-            <template #default="scope">
-              <div class="times-box">
-                <div class="today-box">
-                  <span>今日</span>
-                  <span>{{ scope.row.todayPv }}</span>
-                </div>
-                <div class="total-box">
-                  <span>累计</span>
-                  <span>{{ scope.row.totalPv }}</span>
-                </div>
-              </div>
-            </template>
+          <el-table-column v-if="!compact" label="访客数" width="93">
+            <template #default="{ row }"><div class="metric"><strong>{{ row.totalUv ?? 0 }}</strong><small>今日 {{ row.todayUv ?? 0 }}</small></div></template>
           </el-table-column>
-          <el-table-column label="访问人数" prop="people" width="120">
-            <template #header>
-              <el-dropdown>
-                <div :class="{ orderIndex: orderIndex === 2 }" class="block" style="margin-top: 3px">
-                  <span>访问人数</span>
-                  <el-icon>
-                    <CaretBottom />
-                  </el-icon>
-                </div>
-                <template #dropdown>
-                  <el-dropdown-item @click="pageParams.orderTag = 'todayUv', orderIndex = 2">今日访问人数</el-dropdown-item>
-                  <el-dropdown-item @click="pageParams.orderTag = 'totalUv', orderIndex = 2">累计访问人数</el-dropdown-item>
-                </template>
-              </el-dropdown>
-            </template>
-            <template #default="scope">
-              <div class="times-box">
-                <div class="today-box">
-                  <span>今日</span>
-                  <span>{{ scope.row.todayUv }}</span>
-                </div>
-                <div class="total-box">
-                  <span>累计</span>
-                  <span>{{ scope.row.totalUv }}</span>
-                </div>
-              </div>
-            </template>
+          <el-table-column v-if="!compact" label="独立 IP" width="93">
+            <template #default="{ row }"><div class="metric"><strong>{{ row.totalUip ?? 0 }}</strong><small>今日 {{ row.todayUip ?? 0 }}</small></div></template>
           </el-table-column>
-          <el-table-column label="IP数" prop="IP" width="120">
-            <template #header>
-              <el-dropdown>
-                <div :class="{ orderIndex: orderIndex === 3 }" class="block" style="margin-top: 3px">
-                  <span>IP数</span>
-                  <el-icon>
-                    <CaretBottom />
-                  </el-icon>
-                </div>
-                <template #dropdown>
-                  <el-dropdown-item @click="pageParams.orderTag = 'todayUip', orderIndex = 3">今日IP数</el-dropdown-item>
-                  <el-dropdown-item @click="pageParams.orderTag = 'totalUip', orderIndex = 3">累计IP数</el-dropdown-item>
-                </template>
-              </el-dropdown>
-            </template>
-            <template #default="scope">
-              <div class="times-box">
-                <div class="today-box">
-                  <span>今日</span>
-                  <span>{{ scope.row.todayUip }}</span>
-                </div>
-                <div class="total-box">
-                  <span>累计</span>
-                  <span>{{ scope.row.totalUip }}</span>
-                </div>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column fixed="right" label="操作" width="180">
-            <template #default="scope">
-              <div style="display: flex; align-items: center">
-                <!-- <el-link
-                :underline="false"
-                class="el-link"
-                type="primary"
-                @click="chartsVisible(row?.info)"
-                >数据</el-link
-              >
-              <el-link :underline="false" class="el-link" type="primary">编辑</el-link> -->
-                <!-- 表格中的数据按钮 -->
-                <el-tooltip show-after="500" class="box-item" effect="dark" content="查看图表" placement="bottom-end">
-                  <el-icon class="table-edit" @click="chartsVisible(scope.row)">
-                    <Histogram />
-                  </el-icon>
-                </el-tooltip>
-                <!-- 正常页面展示编辑和删除 -->
-                <template v-if="selectedIndex !== -1">
-                  <!-- 表格中的编辑按钮 -->
-                  <el-tooltip show-after="500" class="box-item" effect="dark" content="编辑" placement="bottom-end">
-                    <el-icon @click="editLink(scope.row)" class="table-edit">
-                      <Tools />
-                    </el-icon>
-                  </el-tooltip>
-                  <!-- 删除按钮 -->
-                  <el-tooltip show-after="500" class="box-item" effect="dark" content="删除" placement="bottom-end">
-                    <el-popconfirm width="100" title="是否移入回收站" @confirm="toRecycleBin(scope.row)">
-                      <template #reference>
-                        <el-icon class="table-edit">
-                          <Delete />
-                        </el-icon>
-                      </template>
-                    </el-popconfirm>
-                  </el-tooltip>
-                </template>
-                <!-- 回收站操作 -->
-                <template v-else>
-                  <!-- 回收站中的恢复按钮 -->
-                  <el-tooltip show-after="500" class="box-item" effect="dark" content="恢复" placement="bottom-end">
-                    <el-icon @click="recoverLink(scope.row)" class="table-edit">
-                      <HelpFilled />
-                    </el-icon>
-                  </el-tooltip>
-                  <!-- 回收站中的删除按钮 -->
-                  <el-tooltip show-after="500" class="box-item" effect="dark" content="删除" placement="bottom-end">
-                    <el-popconfirm width="300" title="删除后短链跳转会失效，同时停止数据统计，这是一个不可逆的操作，是否删除?"
-                      @confirm="removeLink(scope.row)">
-                      <template #reference>
-                        <el-icon class="table-edit">
-                          <Delete />
-                        </el-icon>
-                      </template>
-                    </el-popconfirm>
-                  </el-tooltip>
-                </template>
-              </div>
+          <el-table-column v-if="!compact" label="操作" width="194">
+            <template #default="{ row }">
+              <LinkActions :url="shortUrl(row)" :is-recycle-bin="isRecycleBin"
+                @stats="chartsVisible(row)" @copy="copyUrl(shortUrl(row))" @edit="editLink(row)"
+                @trash="applyLinkAction(row, 'toRecycleBin', '已移入回收站')"
+                @restore="applyLinkAction(row, 'recoverLink', '已恢复短链')"
+                @remove="applyLinkAction(row, 'removeLink', '已删除短链')" />
             </template>
           </el-table-column>
         </el-table>
-        <!-- 分页器 -->
-        <div class="pagination-block">
+        <div v-if="totalNums && !pageError" class="pagination-block">
           <el-pagination v-model:current-page="pageParams.current" v-model:page-size="pageParams.size"
-            :page-sizes="[10, 15, 20, 30]" layout="total, sizes, prev, pager, next, jumper" :total="totalNums"
-            @size-change="handleSizeChange" @current-change="handleCurrentChange" />
+            :page-sizes="[10, 15, 20, 30]" layout="total, sizes, prev, pager, next" :total="totalNums"
+            @size-change="changeSort" @current-change="loadPage" />
         </div>
-      </div>
+      </section>
     </div>
-    <!-- 查看数据弹框 -->
-    <ChartsInfo style="width: 880px" ref="chartsInfoRef" :title="chartsInfoTitle" :info="chartsInfo"
-      :tableInfo="tableInfo" :isGroup="isGroup" :nums="nums" :originUrl="originUrl1"
-      @changeTime="changeTime" @changePage="changePage" top="60px"></ChartsInfo>
-    <!-- 新建分组弹框 -->
-    <el-dialog v-model="isAddGroup" title="新建短链接分组" style="width: 40%">
-      <el-form :model="form">
-        <el-form-item label="分组名称：" :label-width="formLabelWidth">
-          <el-input autocomplete="off" v-model="newGroupName" />
+    <ChartsInfo ref="chartsInfoRef" :title="chartsInfoTitle" :info="chartsInfo" :tableInfo="tableInfo"
+      :isGroup="isGroup" :nums="statsGroupCount" :originUrl="originUrl1"
+      @changeTime="changeTime" @changePage="changePage" />
+    <el-dialog v-model="groupDialog" :title="editGid ? '编辑分组' : '新建分组'" width="420px">
+      <el-form label-position="top" @submit.prevent="saveGroup">
+        <el-form-item label="分组名称">
+          <el-input v-model.trim="groupName" maxlength="64" autocomplete="off" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="isAddGroup = false">取消</el-button>
-          <el-button type="primary" @click="addGroup" :disabled="addGroupLoading"> 确认 </el-button>
-        </span>
+        <el-button @click="groupDialog = false">取消</el-button>
+        <el-button type="primary" :loading="groupSaving" :disabled="!groupName" @click="saveGroup">保存</el-button>
       </template>
     </el-dialog>
-    <!-- 编辑分组弹框 -->
-    <el-dialog v-model="isEditGroup" title="编辑短链接分组" style="width: 40%">
-      <el-form :model="form">
-        <el-form-item label="分组名称：" :label-width="formLabelWidth">
-          <el-input autocomplete="off" v-model="editGroupName" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="isEditGroup = false">取消</el-button>
-          <el-button type="primary" @click="editGroup" :disabled="editGroupLoading">
-            确认
-          </el-button>
-        </span>
-      </template>
+    <el-dialog v-model="isAddSmallLink" title="创建链接" width="630px" destroy-on-close>
+      <CreateLink :groupInfo="editableTabs" :defaultGid="activeGid" :is-single="true" @onSubmit="linkCreated" @cancel="isAddSmallLink = false" />
     </el-dialog>
-    <!-- 创建短链弹框 -->
-    <el-dialog @close="afterAddLink" v-model="isAddSmallLink" title="创建链接">
-      <CreateLink ref="createLink1Ref" :groupInfo="editableTabs" @onSubmit="addLink" @cancel="cancelAddLink"
-        :defaultGid="pageParams.gid" :is-single="true" />
+    <el-dialog v-model="isEditLink" title="编辑链接" width="630px" destroy-on-close>
+      <EditLink :editData="editData" :groupInfo="editableTabs" @onSubmit="isEditLink = false" @updatePage="loadWorkspace" @cancel="isEditLink = false" />
     </el-dialog>
-    <!-- 修改短链信息弹框 -->
-    <el-dialog @close="afterAddLink" v-model="isEditLink" title="编辑链接">
-      <EditLink ref="editLinkRef" :editData="editData" :groupInfo="editableTabs" @onSubmit="coverEditLink"
-        @updatePage="updatePage" @cancel="coverEditLink"></EditLink>
-    </el-dialog>
-    <!-- 批量创建短链弹框 -->
-    <el-dialog @close="afterAddLink" v-model="isAddSmallLinks" title="批量链接">
-      <CreateLinks ref="createLink2Ref" :groupInfo="editableTabs" @onSubmit="addLink" @cancel="cancelAddLink"
-        :defaultGid="pageParams.gid"></CreateLinks>
+    <el-dialog v-model="isAddSmallLinks" title="批量创建" width="680px" destroy-on-close>
+      <CreateLinks :groupInfo="editableTabs" :defaultGid="activeGid" @onSubmit="linkCreated" @cancel="isAddSmallLinks = false" />
     </el-dialog>
   </div>
 </template>
-
 <script setup>
-import { ref, reactive, onMounted, getCurrentInstance, watch, nextTick } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Sortable from 'sortablejs'
-import { cloneDeep } from 'lodash'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import API from '@/api'
+import { getTodayFormatDate, getLastWeekFormatDate } from '@/utils/plugins.js'
 import ChartsInfo from './components/chartsInfo/ChartsInfo.vue'
 import CreateLink from './components/createLink/CreateLink.vue'
 import CreateLinks from './components/createLink/CreateLinks.vue'
-import { getTodayFormatDate, getLastWeekFormatDate } from '@/utils/plugins.js'
 import EditLink from './components/editLink/EditLink.vue'
-import { ElMessage } from 'element-plus'
-import QRCode from './components/qrCode/QRCode.vue'
+import LinkActions from './components/LinkActions.vue'
 
-// 查看图表的时候传过去展示的，没什么用
-const nums = ref(0)
-const originUrl1 = ref()
-const orderIndex = ref(0)
-
-const { proxy } = getCurrentInstance()
-const API = proxy.$API
-const chartsInfoRef = ref()
-const chartsInfoTitle = ref()
-const chartsInfo = ref()
-const tableInfo = ref()
-const createLink1Ref = ref()
-const createLink2Ref = ref()
-let selectedIndex = ref(0)
+const route = useRoute()
+const router = useRouter()
+const groupList = ref()
+const smallScreen = window.matchMedia('(max-width: 680px)')
+const compact = ref(smallScreen.matches)
+const syncScreen = (event) => { compact.value = event.matches }
 const editableTabs = ref([])
-// 添加弹窗关闭后重新请求一下页面数据
-const afterAddLink = () => {
-  setTimeout(() => {
-    getGroupInfo(queryPage) // 重新请求数据
-    // 按钮重新恢复可点击的样式
-    document.querySelector('.addButton') && document.querySelector('.addButton').blur()
-  }, 0)
-  if (createLink1Ref.value) {
-    createLink1Ref.value.initFormData()
-  }
-  if (createLink2Ref.value) {
-    createLink2Ref.value.initFormData()
-  }
-  if (editLinkRef.value) {
-    editLinkRef.value.initFormData()
-  }
+const activeGid = ref('')
+const activeGroup = computed(() => editableTabs.value.find((group) => group.gid === activeGid.value))
+const isRecycleBin = computed(() => route.query.view === 'recycle')
+const overview = ref()
+const numberFormat = new Intl.NumberFormat('zh-CN')
+const formatMetric = (value) => value == null ? '—' : numberFormat.format(value)
+const tableData = ref([])
+const totalNums = ref(0)
+const loading = ref(true)
+const pageError = ref('')
+const pageParams = reactive({ current: 1, size: 15, orderTag: 'created' })
+const sortOptions = [
+  { value: 'created', label: '最新创建' },
+  { value: 'totalPv', label: '累计访问量' },
+  { value: 'todayPv', label: '今日访问量' },
+  { value: 'totalUv', label: '累计访客数' },
+  { value: 'todayUv', label: '今日访客数' },
+  { value: 'totalUip', label: '累计独立 IP' },
+  { value: 'todayUip', label: '今日独立 IP' }
+]
+let pageRequest = 0
+let sortable
+
+function unwrap(response) {
+  if (response.data?.code !== '0') throw new Error(response.data?.message || '请求失败，请重试')
+  return response.data.data
 }
-const statsFormData = reactive({
-  endDate: getTodayFormatDate(),
-  startDate: getLastWeekFormatDate(),
-  size: 10,
-  current: 1
-})
-const initStatsFormData = () => {
-  statsFormData.endDate = getTodayFormatDate()
-  statsFormData.startDate = getLastWeekFormatDate()
-}
-const visitLink = {
-  fullShortUrl: '',
-  gid: '',
-  enableStatus: null
-}
-// 打开的图表是分组（true为分组）的还是单链的
-const isGroup = ref(false)
-const tableFullShortUrl = ref()
-const tableGid = ref()
-// 点击查看数据图表
-const chartsVisible = async (rowInfo, dateList) => {
-  chartsInfoTitle.value = rowInfo?.describe
-  // 如果传入的group为true的话就查询分组的数据，如果没传就查询单链的数据
-  const { fullShortUrl, gid, group, originUrl, enableStatus } = rowInfo
-  originUrl1.value = originUrl
-  isGroup.value = group
-  tableFullShortUrl.value = fullShortUrl
-  tableGid.value = gid
-  // 后续修改时间的时候拿去用
-  visitLink.fullShortUrl = fullShortUrl
-  visitLink.gid = gid
-  visitLink.enableStatus = enableStatus
-  chartsInfoRef?.value.isVisible()
-  // 如果没有时间传值，就默认查找过去一周的数据
-  if (!dateList) {
-    initStatsFormData()
-  } else {
-    // 否则就按照传过来的数据去请求数据
-    statsFormData.startDate = dateList?.[0] + ' 00:00:00'
-    statsFormData.endDate = dateList?.[1] + ' 23:59:59'
-  }
-  let res = null
-  let tableRes = null
-  if (group) {
-    res = await API.group.queryGroupStats({ ...statsFormData, fullShortUrl, gid })
-    tableRes = await API.group.queryGroupTable({ gid, ...statsFormData })
-  } else {
-    res = await API.smallLinkPage.queryLinkStats({ ...statsFormData, fullShortUrl, gid, enableStatus })
-    tableRes = await API.smallLinkPage.queryLinkTable({ gid, fullShortUrl, ...statsFormData, enableStatus })
-  }
-  tableInfo.value = tableRes
-  chartsInfo.value = res?.data?.data
-  // debugger
-}
-// 图表修改时间后重新请求数
-const changeTimeData = async (rowInfo, dateList) => {
-  const { fullShortUrl, gid, enableStatus } = rowInfo
-  if (!dateList) {
-    initStatsFormData()
-  } else {
-    // 否则就按照传过来的数据去请求数据
-    statsFormData.startDate = dateList?.[0] + ' 00:00:00'
-    statsFormData.endDate = dateList?.[1] + ' 23:59:59'
-  }
-  let res = null
-  let tableRes = null
-  // 判断是分组还是单个短链接
-  if (isGroup.value) {
-    res = await API.group.queryGroupStats({ ...statsFormData, fullShortUrl, gid })
-    tableRes = await API.group.queryGroupTable({ gid, ...statsFormData })
-  } else {
-    res = await API.smallLinkPage.queryLinkStats({ ...statsFormData, fullShortUrl, gid, enableStatus })
-    tableRes = await API.smallLinkPage.queryLinkTable({ gid, fullShortUrl, ...statsFormData, enableStatus })
-  }
-  tableInfo.value = tableRes
-  chartsInfo.value = res?.data?.data
-}
-// 修改时间
-const changeTime = (dateList) => {
-  changeTimeData(visitLink, dateList)
-}
-// 修改页码信息
-const changePage = async (page) => {
-  const { current, size } = page
-  statsFormData.current = current ?? 1
-  statsFormData.size = size ?? 10
-  let tableRes = null
-  // 判断是分组还是单个短链接
-  if (isGroup.value) {
-    tableRes = await API.group.queryGroupTable({ gid: tableGid.value, ...statsFormData })
-  } else {
-    tableRes = await API.smallLinkPage.queryLinkTable({
-      gid: tableGid.value,
-      fullShortUrl: tableFullShortUrl.value,
-      ...statsFormData
+
+watch([activeGroup, isRecycleBin], ([group, recycling], _previous, onCleanup) => {
+  overview.value = undefined
+  if (!group || recycling) return
+  let current = true
+  onCleanup(() => { current = false })
+  void API.group.queryGroupStats({ gid: group.gid, startDate: getLastWeekFormatDate(), endDate: getTodayFormatDate() })
+    .then((response) => {
+      if (current) overview.value = unwrap(response) ?? { pv: 0, uv: 0 }
     })
+    .catch(() => {
+      if (current) overview.value = undefined
+    })
+})
+
+async function loadWorkspace() {
+  loading.value = true
+  pageError.value = ''
+  try {
+    editableTabs.value = (unwrap(await API.group.queryGroup()) ?? []).slice().reverse()
+    if (!activeGroup.value) activeGid.value = editableTabs.value[0]?.gid ?? ''
+    await loadPage()
+  } catch (error) {
+    pageError.value = error.message
+    loading.value = false
   }
-  tableInfo.value = tableRes
 }
-// 将原来的数据转化为拖拽后传给后端的数据格式
-const transformGroupData = (oldIndex, newIndex) => {
-  // 相当于直接对展示数据进行修改
-  const formData = editableTabs.value
-  const tempData = formData.splice(oldIndex, 1)
-  // console.log('调整的值', tempData)
-  formData.splice(newIndex, 0, tempData[0])
-  // console.log('这是经过转化的1', formData)
-  formData.forEach((item, index) => {
-    item.sortOrder = index
-  })
-  // console.log('这是经过转化的2', formData)
-  return formData
+
+async function loadPage() {
+  const request = ++pageRequest
+  loading.value = true
+  pageError.value = ''
+  try {
+    let page = {}
+    const { current, size, orderTag } = pageParams
+    if (isRecycleBin.value) {
+      page = unwrap(await API.smallLinkPage.queryRecycleBin({ current, size })) ?? {}
+    } else if (activeGid.value) {
+      page = unwrap(await API.smallLinkPage.queryPage({
+        gid: activeGid.value, current, size, orderTag: orderTag === 'created' ? undefined : orderTag
+      })) ?? {}
+    }
+    if (request !== pageRequest) return
+    const total = Number(page.total ?? 0)
+    const lastPage = Math.max(1, Math.ceil(total / size))
+    if (current > lastPage) {
+      pageParams.current = lastPage
+      return loadPage()
+    }
+    tableData.value = page.records ?? []
+    totalNums.value = total
+  } catch (error) {
+    if (request === pageRequest) pageError.value = error.message
+  } finally {
+    if (request === pageRequest) loading.value = false
+  }
 }
-// 拖拽
-const initSortable = (className) => {
-  const table = document.querySelector('.' + className)
-  // console.log(table)
-  // 创建拖拽实例
-  Sortable.create(table, {
-    animation: 150, //动画
-    // 开始拖动事件
-    onStart: () => {
-      // console.log('开始拖动')
-    },
-    // 结束拖动事件
-    onEnd: async ({ to, from, oldIndex, newIndex, clone, pullMode }) => {
-      // 当oldIndex不等于newIndex时才会去请求接口
-      if (newIndex !== oldIndex) {
-        // 对于不同情况下数据变化后的选中数据的实现
-        if (selectedIndex.value === oldIndex) {
-          selectedIndex.value = newIndex
-        } else if (
-          oldIndex < newIndex &&
-          selectedIndex.value > oldIndex &&
-          selectedIndex.value <= newIndex
-        ) {
-          selectedIndex.value = selectedIndex.value - 1
-        } else if (
-          oldIndex > newIndex &&
-          selectedIndex.value < oldIndex &&
-          selectedIndex.value >= newIndex
-        ) {
-          selectedIndex.value = selectedIndex.value + 1
-        }
-        const res = await API.group.sortGroup(transformGroupData(oldIndex, newIndex))
-        // console.log('排序后的结果', res)
+
+function changeSort() {
+  pageParams.current = 1
+  return loadPage()
+}
+
+function selectGroup(gid) {
+  if (activeGid.value === gid && !isRecycleBin.value) return
+  activeGid.value = gid
+  if (isRecycleBin.value) return router.push('/home/space')
+  return changeSort()
+}
+
+function openRecycleBin() {
+  return router.push('/home/space?view=recycle')
+}
+
+watch(isRecycleBin, changeSort)
+onMounted(() => {
+  smallScreen.addEventListener('change', syncScreen)
+  void loadWorkspace()
+  sortable = Sortable.create(groupList.value, {
+    animation: 150,
+    handle: '.drag-handle',
+    async onEnd({ oldIndex, newIndex }) {
+      if (oldIndex === newIndex || oldIndex == null || newIndex == null) return
+      const previous = editableTabs.value
+      const ordered = previous.slice()
+      const [moved] = ordered.splice(oldIndex, 1)
+      ordered.splice(newIndex, 0, moved)
+      const item = groupList.value.children[newIndex]
+      const anchor = groupList.value.children[oldIndex + (newIndex < oldIndex ? 1 : 0)]
+      groupList.value.insertBefore(item, anchor ?? null)
+      editableTabs.value = ordered
+      try {
+        unwrap(await API.group.sortGroup(ordered.map(({ gid }, sortOrder) => ({ gid, sortOrder }))))
+      } catch (error) {
+        editableTabs.value = previous
+        ElMessage.error(error.message)
       }
     }
   })
-}
-// 改变选中分组时触发
-watch(
-  () => selectedIndex.value,
-  (newValue) => {
-    // -1为回收站，不需要重新请求正常页面数据
-    if (newValue !== -1 && newValue !== -2) {
-      queryPage()
-    }
-  }
-)
-onMounted(() => {
-  initSortable('sortOptions')
 })
-const tableData = ref([])
-const pageParams = reactive({
-  gid: null,
-  current: 1,
-  size: 15,
-  orderTag: null
+onUnmounted(() => {
+  smallScreen.removeEventListener('change', syncScreen)
+  sortable?.destroy()
 })
-watch(
-  () => pageParams.orderTag,
-  (nV) => {
-    queryPage()
-  }
-)
-const totalNums = ref(0)
-// 数据变化后更新当前页面
-const queryPage = async () => {
-  pageParams.gid = editableTabs.value?.[selectedIndex.value]?.gid
-  nums.value = editableTabs.value?.[selectedIndex.value]?.shortLinkCount || 0
-  const res = await API.smallLinkPage.queryPage(pageParams)
-  if (res?.data.success) {
-    tableData.value = res.data?.data?.records
-    totalNums.value = +res.data?.data?.total
-  } else {
-    ElMessage.error(res?.data.message)
-  }
-}
 
-const handleSizeChange = () => {
-  !isRecycleBin.value ? queryPage() : queryRecycleBinPage()
-}
-
-const handleCurrentChange = () => {
-  !isRecycleBin.value ? queryPage() : queryRecycleBinPage()
-}
-
-// 获取分组信息，更新页面的分组模块
-const getGroupInfo = async (fn) => {
-  const res = await API.group.queryGroup()
-  editableTabs.value = res.data?.data?.reverse()
-  fn && fn()
-}
-getGroupInfo(queryPage)
-
-const updatePage = () => {
-  getGroupInfo(queryPage)
-}
-
-// 是否展示回收站相关的组件
-const isRecycleBin = ref(false)
-const recycleBinNums = ref(0) // 回收站中的数量
-// 获取回收站页面，gid到时候要删除
-const queryRecycleBinPage = () => {
-  API.smallLinkPage
-    .queryRecycleBin({ current: pageParams.current, size: pageParams.size })
-    .then((res) => {
-      tableData.value = res.data?.data?.records
-      totalNums.value = +res.data?.data?.total
-      recycleBinNums.value = totalNums.value
-    })
-}
-// 点击回收站
-const recycleBin = () => {
-  isRecycleBin.value = true
-  selectedIndex.value = -1 // -1作为回收站，-2作为选中其他
-  pageParams.current = 1
-  pageParams.size = 15
-  // 点击回收站相关的请求
-  queryRecycleBinPage()
-}
-// 点击分组中的选项
-const changeSelectIndex = (index) => {
-  selectedIndex.value = index
-  isRecycleBin.value = false
-  // 对应分组的数据请求
-}
-// 添加分组相关
-const isAddGroup = ref(false)
-const newGroupName = ref()
-const addGroupLoading = ref(false)
-// 展示添加分组弹框
-const showAddGroup = () => {
-  newGroupName.value = ''
-  isAddGroup.value = true
-}
-// 添加分组
-const addGroup = async () => {
-  addGroupLoading.value = true
-  const res1 = await API.group.addGroup({ name: newGroupName.value })
-  if (res1?.data.success) {
-    ElMessage.success('添加成功')
-    getGroupInfo(queryPage)
-  } else {
-    ElMessage.error(res1?.data.message)
-  }
-  isAddGroup.value = false
-  addGroupLoading.value = false
-}
-// 删除分组
-const deleteGroup = async (gid) => {
-  const res = await API.group.deleteGroup({ gid })
-  selectedIndex.value = 0
-  if (res.data.success) {
-    ElMessage.success('删除成功')
-    getGroupInfo(queryPage)
-  } else {
-    ElMessage.error(res.data.message)
-  }
-}
-// 编辑分组
-const isEditGroup = ref(false)
-const editGroupName = ref()
+const groupDialog = ref(false)
 const editGid = ref('')
-const editGroupLoading = ref(false)
-// 点击编辑按钮，出现编辑弹框
-const showEditGroup = (gid, name) => {
+const groupName = ref('')
+const groupSaving = ref(false)
+
+function showAddGroup() {
+  showEditGroup('', '')
+}
+
+function showEditGroup(gid, name) {
   editGid.value = gid
-  editGroupName.value = name
-  isEditGroup.value = true
+  groupName.value = name
+  groupDialog.value = true
 }
-// 编辑分组标题
-const editGroup = async () => {
-  editGroupLoading.value = true
-  const res = await API.group.editGroup({ gid: editGid.value, name: editGroupName.value })
-  if (res.data.success) {
-    ElMessage.success('编辑成功')
-    getGroupInfo(queryPage)
-  } else {
-    ElMessage.error('编辑失败')
+
+async function saveGroup() {
+  if (!groupName.value || groupSaving.value) return
+  groupSaving.value = true
+  try {
+    const name = groupName.value
+    unwrap(await (editGid.value ? API.group.editGroup({ gid: editGid.value, name }) : API.group.addGroup({ name })))
+    groupDialog.value = false
+    ElMessage.success('已保存分组')
+    await loadWorkspace()
+  } catch (error) {
+    ElMessage.error(error.message)
+  } finally {
+    groupSaving.value = false
   }
-  isEditGroup.value = false
-  editGroupLoading.value = false
 }
-// 创建短链
+
+async function deleteGroup(group) {
+  if (Number(group.shortLinkCount) > 0) {
+    ElMessage.warning('请先移走该分组里的短链')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定删除分组「' + group.name + '」？', '删除分组', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch {
+    return
+  }
+  try {
+    unwrap(await API.group.deleteGroup({ gid: group.gid }))
+    ElMessage.success('已删除分组')
+    await loadWorkspace()
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
+}
+
 const isAddSmallLink = ref(false)
 const isAddSmallLinks = ref(false)
-// 关闭新建短链接弹窗
-const addLink = () => {
+const isEditLink = ref(false)
+const editData = ref()
+
+function linkCreated() {
   isAddSmallLink.value = false
   isAddSmallLinks.value = false
+  return loadWorkspace()
 }
-// 新建批量新建短链接弹窗
-const cancelAddLink = () => {
-  isAddSmallLink.value = false
-  isAddSmallLinks.value = false
-}
-// 判断链接是否过期
-const isExpire = (validDate) => {
-  if (validDate) {
-    const date = new Date(validDate).getTime()
-    return new Date().getTime() < date
-  }
-}
-// 复制链接
-const copyUrl = (url) => {
-  let eInput = document.createElement('input')
-  eInput.value = url
-  document.body.appendChild(eInput)
-  eInput.select()
-  let copyText = document.execCommand('Copy')
-  eInput.style.display = 'none'
-  if (copyText) {
-    // console.log(eInput.value)
-    ElMessage.success('链接复制成功!')
-  }
-}
-// 修改短链信息
-const isEditLink = ref(false) // 是否展示编辑弹框
-const editLinkRef = ref()
-const editData = ref() // 编辑弹框的数据
-const editLink = (data) => {
-  // console.log('data: ---' + data)
-  editData.value = data
+
+function editLink(row) {
+  editData.value = row
   isEditLink.value = true
 }
-// 隐藏弹框
-const coverEditLink = () => {
-  isEditLink.value = false
+
+async function applyLinkAction(row, method, message) {
+  try {
+    unwrap(await API.smallLinkPage[method]({ gid: row.gid, fullShortUrl: row.fullShortUrl }))
+    ElMessage.success(message)
+    await loadWorkspace()
+  } catch (error) {
+    ElMessage.error(error.message)
+  }
 }
-// 移动到回收站
-const toRecycleBin = (data) => {
-  const { gid, fullShortUrl } = data
-  API.smallLinkPage
-    .toRecycleBin({ gid, fullShortUrl })
-    .then((res) => {
-      if (res?.data?.code !== '0') {
-        ElMessage.error(res.data.message)
-      } else {
-        ElMessage.success('删除成功')
-        getGroupInfo(queryPage)
-      }
-    })
-    .catch((reason) => {
-      ElMessage.error('删除失败')
-    })
+
+const isExpired = (row) => row.validDateType === 1 && new Date(row.validDate).getTime() < Date.now()
+const linkStatus = (row) => isRecycleBin.value ? '已移除' : isExpired(row) ? '已过期' : '有效'
+const shortUrl = (row) => 'http://' + row.fullShortUrl
+
+async function copyUrl(url) {
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('已复制短链')
+  } catch {
+    ElMessage.error('无法复制。请从短链地址手动复制。')
+  }
 }
-// 回收站中恢复
-const recoverLink = (data) => {
-  const { gid, fullShortUrl } = data
-  API.smallLinkPage
-    .recoverLink({ gid, fullShortUrl })
-    .then((res) => {
-      ElMessage.success('恢复成功')
-      queryRecycleBinPage()
-      // getGroupInfo(queryPage)
-      getGroupInfo()         //修复短链接恢复会报系统执行出错的问题
-    })
-    .catch((reason) => {
-      ElMessage.error('恢复失败')
-    })
+
+const chartsInfoRef = ref()
+const chartsInfoTitle = ref('')
+const chartsInfo = ref()
+const tableInfo = ref()
+const originUrl1 = ref()
+const statsTarget = ref()
+const isGroup = computed(() => Boolean(statsTarget.value?.group))
+const statsGroupCount = computed(() => editableTabs.value.find((group) => group.gid === statsTarget.value?.gid)?.shortLinkCount ?? 0)
+const statsFormData = reactive({ startDate: '', endDate: '', size: 10, current: 1 })
+let statsRequest = 0
+
+function setStatsDates(dates) {
+  statsFormData.startDate = dates?.[0] ? dates[0].slice(0, 10) + ' 00:00:00' : getLastWeekFormatDate()
+  statsFormData.endDate = dates?.[1] ? dates[1].slice(0, 10) + ' 23:59:59' : getTodayFormatDate()
 }
-// 从回收站中删除
-const removeLink = (data) => {
-  const { gid, fullShortUrl } = data
-  API.smallLinkPage
-    .removeLink({ gid, fullShortUrl })
-    .then((res) => {
-      if (res?.data?.code !== '0') {
-        ElMessage.error(res.data.message)
-      } else {
-        ElMessage.success('删除成功')
-        queryRecycleBinPage()
-      }
-    })
-    .catch((reason) => {
-      ElMessage.error('删除失败')
-    })
+
+function statsParams() {
+  const { gid, fullShortUrl, enableStatus } = statsTarget.value
+  return { ...statsFormData, gid, fullShortUrl, enableStatus }
+}
+
+async function loadStats() {
+  const request = ++statsRequest
+  const params = statsParams()
+  try {
+    const [summary, history] = await (isGroup.value
+      ? Promise.all([API.group.queryGroupStats(params), API.group.queryGroupTable(params)])
+      : Promise.all([API.smallLinkPage.queryLinkStats(params), API.smallLinkPage.queryLinkTable(params)]))
+    if (request !== statsRequest) return
+    chartsInfo.value = unwrap(summary)
+    unwrap(history)
+    tableInfo.value = history
+  } catch (error) {
+    if (request === statsRequest) ElMessage.error(error.message)
+  }
+}
+
+function chartsVisible(row) {
+  statsTarget.value = row
+  chartsInfoTitle.value = row.describe || row.shortUri || '访问统计'
+  originUrl1.value = row.originUrl
+  chartsInfo.value = undefined
+  tableInfo.value = undefined
+  statsFormData.current = 1
+  statsFormData.size = 10
+  setStatsDates()
+  chartsInfoRef.value.isVisible()
+  return loadStats()
+}
+
+function changeTime(dates) {
+  if (!statsTarget.value) return
+  statsFormData.current = 1
+  setStatsDates(dates)
+  return loadStats()
+}
+
+async function changePage({ current, size }) {
+  if (!statsTarget.value) return
+  const request = ++statsRequest
+  statsFormData.current = current ?? 1
+  statsFormData.size = size ?? 10
+  const params = statsParams()
+  try {
+    const result = await (isGroup.value ? API.group.queryGroupTable(params) : API.smallLinkPage.queryLinkTable(params))
+    if (request === statsRequest) {
+      unwrap(result)
+      tableInfo.value = result
+    }
+  } catch (error) {
+    if (request === statsRequest) ElMessage.error(error.message)
+  }
 }
 </script>
 
-<style lang="scss" scoped>
-.flex-box {
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  justify-content: space-between;
-}
-
-.hover-box:hover {
-  cursor: pointer;
-  color: rgba(40, 145, 206, 0.6);
-  background-color: #f7f7f7;
-  box-shadow: 0px 2px 8px 0px rgba(28, 41, 90, 0.1);
-}
-
-.option-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 56px;
-  font-size: 15px;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-
-  span {
-    font-size: 12px;
-    font-weight: 400;
-  }
-}
-
-.options-box {
-  display: flex;
-  flex-direction: column;
+<style scoped>
+.page-heading {
   position: relative;
-  height: 100%;
-  width: 190px;
-  border-right: 1px solid rgba(0, 0, 0, 0.1);
-
-  .item-box {
-    height: 43px;
-    width: 190px;
-    font-family:
-      PingFangSC-Semibold,
-      PingFang SC;
-    font-weight: 520;
-  }
-
-  .item-box:hover {
-    .flex-box {
-      .edit {
-        display: block;
-      }
-
-      .item-length {
-        display: none !important;
-      }
-    }
-  }
-}
-
-.recycle-bin {
-  position: absolute;
   display: flex;
-  bottom: 0;
-  height: 50px;
-  width: 100%;
-}
-
-.recycle-box {
-  flex: 1;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.edit {
-  display: none;
-  margin-left: 5px;
-  color: rgb(83, 97, 97);
-  font-size: 20px;
-}
-
-.edit:hover {
-  color: #2991ce;
-  cursor: pointer;
-}
-
-.zero {
-  color: rgb(83, 97, 97) !important;
-}
-
-// 提示框样式
-.tooltip-base-box {
-  width: 600px;
-}
-
-.tooltip-base-box .row {
-  display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
+  gap: 16px;
+  padding: clamp(18px, 3vw, 36px);
+  margin-bottom: 15px;
+  border: 1px solid #d5d9e4;
+  border-radius: 9px;
+  background-color: #f9f8f2;
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
-
-.tooltip-base-box .center {
-  justify-content: center;
+.page-heading h1 { font-size: clamp(29px, 4vw, 52px); letter-spacing: -.045em; line-height: 1.1; }
+.page-heading p { margin-top: 9px; color: var(--muted); }
+.page-heading p strong { color: var(--accent); }
+.overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  margin: 0 0 18px;
 }
+.overview > div { padding: clamp(9px, 1.7vw, 17px) clamp(10px, 2.3vw, 25px); min-width: 0; }
+.overview > div + div { border-left: 1px solid var(--line); }
+.overview dt { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 550; line-height: 1.35; }
+.overview dt .el-icon { color: var(--accent); }
+.overview dd { margin: 5px 0 0; font: 650 clamp(19px, 2.6vw, 31px)/1.15 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.page-actions, .list-tools { display: flex; align-items: center; gap: 8px; }
+.page-actions .el-button, .list-tools .el-button { margin: 0; }
+.page-actions .el-button { height: 40px; padding: 0 15px; }
+.page-actions .el-icon, .list-tools .el-icon { margin-right: 5px; }
+.console-grid { display: grid; grid-template-columns: 218px minmax(0, 1fr); gap: 18px; align-items: start; }
+.group-panel, .link-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 9px; min-width: 0; }
+.group-panel { padding: 12px; }
+.group-heading, .link-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.group-heading { padding: 5px 5px 11px; }
+.group-heading h2 { font-size: 14px; }
+.group-list { list-style: none; padding: 0; margin: 0 0 12px; }
+.group-list li { display: flex; align-items: center; border-radius: 8px; padding: 2px 3px; min-height: 42px; }
+.group-list li:hover, .group-list .selected, .recycle-button.selected { background: var(--accent-soft); color: var(--accent); }
+.group-button, .recycle-button { display: flex; align-items: center; gap: 8px; background: none; border: 0; text-align: left; }
+.group-button { flex: 1; min-width: 0; padding: 6px 3px; font-weight: 600; }
+.group-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-button small { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.group-menu { margin-left: 3px; }
+.drag-handle { display: grid; place-items: center; cursor: grab; width: 15px; color: var(--muted); }
+.recycle-button { width: 100%; border-top: 1px solid var(--line); padding: 12px 8px 8px; border-radius: 7px; color: var(--muted); }
+.recycle-button:hover { color: var(--accent); }
+.link-panel { overflow: hidden; }
+.link-heading { padding: 17px 20px; min-height: 80px; }
+.link-heading h2 { font-size: 20px; line-height: 1.25; }
+.link-heading p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.sort-select { width: 124px; }
+.link-table { --el-table-header-bg-color: #f1f0ea; --el-table-row-hover-bg-color: #f6f6fc; --el-table-border-color: var(--line); --el-table-header-text-color: var(--muted); --el-table-bg-color: var(--paper); --el-table-tr-bg-color: var(--paper); }
+.link-table :deep(.el-table__cell) { padding: 12px 0; }
+.link-table :deep(.cell) { padding: 0 10px; }
+.link-table :deep(.el-table__cell:first-child .cell) { padding-left: 20px; }
+.link-cell { display: flex; gap: 11px; align-items: start; }
+.link-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+.link-text { display: grid; min-width: 0; line-height: 1.45; }
+.link-text > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.link-text strong { font-weight: 700; color: var(--ink); }
+.link-text a, .inactive-link { font-family: var(--mono); font-size: 12px; font-weight: 650; }
+.link-text a:hover { text-decoration: underline; }
+.origin-url, .inactive-link, .metric small { color: var(--muted); }
+.origin-url, .metric small { font-size: 12px; }
+.compact-actions { margin-top: 10px; display: grid; gap: 5px; }
+.compact-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.status { padding: 3px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 12px; white-space: nowrap; }
+.status.inactive { background: #f3efeb; color: #775f46; }
+.metric { display: grid; font-variant-numeric: tabular-nums; }
+.metric strong { font-family: var(--mono); }
+.metric strong { color: var(--ink); font-size: 16px; }
 
-.tooltip-base-box .box-item {
-  width: 110px;
+.icon-button { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border: 0; border-radius: 7px; background: transparent; color: var(--accent); font-size: 16px; transition: background .18s ease; }
+.icon-button:hover { background: var(--accent-soft); }
+.pagination-block { display: flex; justify-content: flex-end; overflow-x: auto; padding: 14px 20px; }
+.table-loading { padding: 20px; }
+.empty-state { display: grid; justify-items: center; gap: 9px; text-align: center; padding: 54px 15px 64px; border-top: 1px solid var(--line); }
+.empty-state > .el-icon { color: var(--accent); font-size: 23px; width: 47px; height: 47px; border-radius: 12px; background: var(--accent-soft); }
+.empty-state strong { font-size: 17px; }
+.empty-state p { color: var(--muted); }
+@media (max-width: 860px) {
+  .console-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .group-list { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 4px; }
+  .group-list li { min-width: 150px; }
+  .group-heading { padding-bottom: 4px; }
+  .recycle-button { padding: 8px; }
 }
-
-.selectedItem {
-  color: #3464e0 !important;
-  background-color: #ebeffa !important;
-  font-weight: 600 !important;
-}
-
-.block:hover {
-  color: rgb(121, 187, 255);
-
-  .el-icon {
-    color: rgb(121, 187, 255) !important;
-  }
-}
-
-.table-edit {
-  font-size: 20px;
-  margin-right: 20px;
-  color: #3677c2;
-  cursor: pointer;
-}
-
-.table-edit:hover {
-  color: #98cafe;
-}
-
-.qr-code {
-  margin-right: 20px;
-  cursor: pointer;
-}
-
-.qr-code:hover {
-  opacity: 0.5;
-}
-
-.content-box {
-  flex: 1;
-  padding: 16px;
-  background-color: #eef0f5;
-  position: relative;
-
-  .table-box {
-    background-color: #ffffff;
-    height: 100%;
-
-    .buttons-box {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px;
-    }
-
-    .pagination-block {
-      position: absolute;
-      bottom: 4%;
-      left: 50%;
-      transform: translate(-50%, 0);
-    }
-
-    .recycle-bin-box {
-      height: 64px;
-      display: flex;
-      align-items: center;
-      padding-left: 16px;
-
-      span:nth-child(1) {
-        font-size: 20px;
-        margin-right: 5px;
-      }
-    }
-  }
-}
-
-.over-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box; //作为弹性伸缩盒子模型显示。
-  -webkit-box-orient: vertical; //设置伸缩盒子的子元素排列方式--从上到下垂直排列
-  -webkit-line-clamp: 1; //显示的行
-}
-
-.table-link-box {
-  display: flex;
-  align-items: center;
-
-  .name-date {
-    display: flex;
-    flex-direction: column;
-    margin-left: 10px;
-
-    span:nth-child(1) {
-      font-size: 15px;
-      font-weight: 500;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      display: -webkit-box; //作为弹性伸缩盒子模型显示。
-      -webkit-box-orient: vertical; //设置伸缩盒子的子元素排列方式--从上到下垂直排列
-      -webkit-line-clamp: 1; //显示的行
-    }
-
-    .time {
-      display: flex;
-      align-items: center;
-
-      span {
-        font-size: 12px;
-      }
-
-      img {
-        margin-left: 10px;
-      }
-
-      div {
-        border: 1.5px solid rgb(253, 81, 85);
-        border-radius: 8px;
-        line-height: 20px;
-        font-size: 12px;
-        transform: scale(0.7);
-        color: rgb(253, 81, 85);
-        padding: 0 4px;
-        background-color: rgba(250, 210, 211);
-
-        span {
-          font-weight: bolder;
-        }
-      }
-    }
-  }
-}
-
-.isExpire {
-  .name-date {
-    span:nth-child(1) {
-      color: rgba(0, 0, 0, 0.3);
-    }
-
-    .time {
-      div {
-        span {
-          font-weight: bolder;
-          color: red;
-        }
-      }
-    }
-  }
-}
-
-.table-url-box {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box; //作为弹性伸缩盒子模型显示。
-    -webkit-box-orient: vertical; //设置伸缩盒子的子元素排列方式--从上到下垂直排列
-    -webkit-line-clamp: 1; //显示的行
-    color: rgba(0, 0, 0, 0.4);
-  }
-}
-
-.times-box {
-  display: flex;
-  flex-direction: column;
-
-  .today-box {
-    span {
-      font-size: 13px;
-      font-weight: 600;
-      margin-right: 10px;
-    }
-
-    span:nth-child(1) {
-      font-weight: 400;
-      color: rgba(0, 0, 0, 0.4);
-    }
-  }
-
-  .total-box {
-    span {
-      font-size: 13px;
-      font-weight: 400;
-      margin-right: 10px;
-    }
-
-    span:nth-child(1) {
-      font-weight: 400;
-      color: rgba(0, 0, 0, 0.4);
-    }
-  }
-}
-
-.copy-url {
-  margin-left: 10px;
-}
-
-.orderIndex {
-  color: #3677c2;
-}
-
-.sortOptions {
-  height: calc(100% - 50px);
-  margin-bottom: 50px;
-  // height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+@media (max-width: 560px) {
+  .page-heading, .link-heading { align-items: flex-start; flex-direction: column; }
+  .page-heading { margin-bottom: 16px; }
+  .overview { margin-bottom: 12px; }
+  .overview dt { font-size: 12px; }
+  .overview dt .el-icon { display: none; }
+  .link-heading { padding: 12px; }
+  .pagination-block { justify-content: flex-start; padding-inline: 8px; }
+  .pagination-block :deep(.el-pagination__sizes) { display: none; }
 }
 </style>

@@ -173,33 +173,16 @@ watch(
   }
 )
 
-// 将分组数据传给选择分组选项并默认选中第一项
 watch(
-  () => props.groupInfo,
-  (nV) => {
-    groupInfo.value = nV
-    // console.log('默认的gid', props.defaultGid)
-    formData.gid = nV[0].gid
-  },
-  {
-    immediate: true
-  }
-)
-watch(
-  () => props.defaultGid,
-  (nV) => {
-    if (props.defaultGid) {
-      formData.gid = props.defaultGid
-    } else {
-      formData.gid = nV[0].gid
+  () => [props.defaultGid, props.groupInfo],
+  ([gid, groups]) => {
+    groupInfo.value = groups ?? []
+    if (gid || !groups?.some((group) => group.gid === formData.gid)) {
+      formData.gid = gid || groups?.[0]?.gid || ''
     }
   },
-  {
-    immediate: true
-  }
+  { immediate: true }
 )
-
-// 校验规则
 const formRule = reactive({
   originUrls: [
     { required: true, message: '请输入链接', trigger: 'blur' },
@@ -269,61 +252,58 @@ const disabledDate = (time) => {
 
 // 将输入框中的含有\n的字符串变为数组
 const transferStrToArray = (str) => {
-  return str.split(/[\n]+/)
+  return (str ?? '').split(/\r?\n/).map((line) => line.trim())
 }
 // 将组件里面的确认和取消点击事件传出去
 const emits = defineEmits(['onSubmit', 'cancel'])
 
-function downLoadXls(res) {
-  let url = window.URL.createObjectURL(
-    new Blob([res.data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    })
-  )
-  // 创建A标签
-  let link = document.createElement('a')
-  link.style.display = 'none'
+function downloadWorkbook(response) {
+  const file = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+  const url = URL.createObjectURL(file)
+  const link = document.createElement('a')
   link.href = url
-  // 设置的下载文件文件名
-  const fileName = decodeURI(res.headers['content-disposition'].split(';')[1].split('filename*=')[1])
-  // 触发点击方法
-  link.setAttribute('download', fileName)
+  link.download = 'LinkStamp-短链接.xlsx'
   document.body.appendChild(link)
   link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-// 点击确定按钮后的校验
 const ruleFormRef = ref()
 const submitDisable = ref(false)
 const onSubmit = async (formEl) => {
+  if (!formEl || submitDisable.value) return
   submitDisable.value = true
-  if (!formEl) {
-    submitDisable.value = false
-    return
-  }
-  await formEl.validate(async (valid, fields) => {
-    if (valid) {
-      let { describes, originUrls } = formData
-      describes = transferStrToArray(describes)
-      originUrls = transferStrToArray(originUrls)
-      const res = await API.smallLinkPage.addLinks({ ...formData, describes, originUrls })
-      if (!res.data.data && res.data) {
-        ElMessage.success('创建成功！短链列表已开始下载')
-        emits('onSubmit', false)
-        submitDisable.value = false
-        downLoadXls(res)
-      } else if (!res?.data?.success) {
-        ElMessage.error(res?.data?.message)
-      } else {
-        ElMessage.success('创建成功！短链列表已开始下载')
-        emits('onSubmit', false)
-        submitDisable.value = false
+  try {
+    if (!await formEl.validate().catch(() => false)) return
+    const { describes, originUrls } = formData
+    const response = await API.smallLinkPage.addLinks({
+      ...formData,
+      describes: transferStrToArray(describes),
+      originUrls: transferStrToArray(originUrls)
+    })
+    const bytes = new Uint8Array(response.data)
+    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+      let message = '批量创建失败，服务未返回 Excel 文件'
+      try {
+        message = JSON.parse(new TextDecoder().decode(bytes)).message || message
+      } catch {
+        // A malformed response also uses the generic message.
       }
-    } else {
-      // ElMessage.error('创建失败！')
+      throw new Error(message)
     }
-  })
+    downloadWorkbook(response)
+    ElMessage.success('短链列表已开始下载')
+    emits('onSubmit', false)
+  } catch (error) {
+    ElMessage.error(error.message || '批量创建失败，请重试')
+  } finally {
+    submitDisable.value = false
+  }
 }
+
 const cancel = () => {
   emits('cancel', false)
   initFormData()

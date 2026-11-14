@@ -5,7 +5,7 @@
         <el-input v-model="formData.originUrl" placeholder="请输入http://或https://开头的链接或应用跳转链接"></el-input>
       </el-form-item>
       <el-form-item label="描述信息" prop="describe">
-        <el-input :rows="4" v-model="formData.describe" type="textarea" placeholder="可通过换行创建多个短链，一行一个，单次最多创建50条" />
+        <el-input :rows="3" v-model="formData.describe" type="textarea" placeholder="输入短链描述" />
         <span>{{ describeRows + '/' + maxDescribeRows }}</span>
       </el-form-item>
 
@@ -27,7 +27,7 @@
       </el-form-item>
       <el-form-item>
         <div style="width: 100%; display: flex; justify-content: flex-end;">
-          <el-button class="buttons" type="primary" @click="onSubmit(ruleFormRef)">确认</el-button>
+          <el-button class="buttons" type="primary" :loading="saving" @click="onSubmit(ruleFormRef)">确认</el-button>
           <el-button class="buttons" @click="cancel">取消</el-button>
         </div>
       </el-form-item>
@@ -233,22 +233,22 @@ const disabledDate = (time) => {
 const emits = defineEmits(['onSubmit', 'cancel', 'updatePage'])
 // 点击确定按钮后的校验
 const ruleFormRef = ref()
+const saving = ref(false)
 const onSubmit = async (formEl) => {
-  if (!formEl) {
-    return
+  if (!formEl || saving.value) return
+  saving.value = true
+  try {
+    if (!await formEl.validate().catch(() => false)) return
+    const { data } = await API.smallLinkPage.editSmallLink(formData)
+    if (data.code !== '0') throw new Error(data.message || '修改失败')
+    ElMessage.success('已保存短链')
+    emits('onSubmit', false)
+    emits('updatePage')
+  } catch (error) {
+    ElMessage.error(error.message || '修改失败')
+  } finally {
+    saving.value = false
   }
-  await formEl.validate(async (valid, fields) => {
-    if (valid) {
-      emits('onSubmit', false)
-      const res = await API.smallLinkPage.editSmallLink(formData)
-      if (res?.data?.code !== '0') {
-        ElMessage.error(res.data.message)
-      } else {
-        ElMessage.success('修改成功')
-        emits('updatePage')
-      }
-    }
-  })
 }
 const cancel = () => {
   emits('cancel', false)

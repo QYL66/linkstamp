@@ -170,13 +170,18 @@ const fd = (fn, delay) => {
   }
 }
 const isLoading = ref(false)
-const queryTitle = (url) => {
-  if (reg.test(url)) {
-    isLoading.value = true
-    API.smallLinkPage.queryTitle({ url: url }).then((res) => {
-      formData.describe = res?.data?.data
-      isLoading.value = false
-    })
+const queryTitle = async (url) => {
+  if (!url || !reg.test(url)) return
+  isLoading.value = true
+  try {
+    const { data } = await API.smallLinkPage.queryTitle({ url })
+    if (data.code === '0' && formData.originUrl === url && !formData.describe) {
+      formData.describe = data.data
+    }
+  } catch {
+    // The description can still be entered manually.
+  } finally {
+    isLoading.value = false
   }
 }
 const getTitle = fd(queryTitle, 1000)
@@ -201,37 +206,16 @@ watch(
   }
 )
 
-// 将分组数据传给选择分组选项并默认选中第一项
 watch(
-  () => props.groupInfo,
-  (nV) => {
-    groupInfo.value = nV
-    // console.log('默认的gid', props.defaultGid)
-    if (props.defaultGid) {
-      formData.gid = props.defaultGid
-    } else {
-      formData.gid = nV[0].gid
+  () => [props.defaultGid, props.groupInfo],
+  ([gid, groups]) => {
+    groupInfo.value = groups ?? []
+    if (gid || !groups?.some((group) => group.gid === formData.gid)) {
+      formData.gid = gid || groups?.[0]?.gid || ''
     }
   },
-  {
-    immediate: true
-  }
+  { immediate: true }
 )
-watch(
-  () => props.defaultGid,
-  (nV) => {
-    if (props.defaultGid) {
-      formData.gid = props.defaultGid
-    } else {
-      formData.gid = nV[0].gid
-    }
-  },
-  {
-    immediate: true
-  }
-)
-
-// 校验规则
 const formRule = reactive({
   originUrl: [
     { required: true, message: '请输入链接', trigger: 'blur' },

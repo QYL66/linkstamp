@@ -1,26 +1,35 @@
+// LinkStamp changes: centralize saving and clearing the browser session.
 import Cookies from 'js-cookie'
 
-const TokenKey = 'token'
-
 export function getToken() {
-  return Cookies.get(TokenKey)
+  return Cookies.get('token')
 }
+
 export function getUsername() {
   return Cookies.get('username')
 }
 
-export function setToken(token) {
-  return Cookies.set(TokenKey, token)
+export function saveSession(username, token) {
+  const options = { sameSite: 'Lax', secure: window.location.protocol === 'https:' }
+  Cookies.set('token', token, options)
+  Cookies.set('username', username, options)
+  localStorage.setItem('token', token)
+  localStorage.setItem('username', username)
 }
 
-export function setUsername(username) {
-  return Cookies.set('username', username)
+export function restoreSession() {
+  const isSet = (value) => Boolean(value && value !== 'null' && value !== 'undefined')
+  if (isSet(getToken()) && isSet(getUsername())) return true
+  const token = localStorage.getItem('token')
+  const username = localStorage.getItem('username')
+  if (!isSet(token) || !isSet(username)) return false
+  saveSession(username, token)
+  return true
 }
 
-export function removeKey() {
-  return Cookies.remove(TokenKey)
-}
-
-export function removeUsername() {
-  return Cookies.remove('username')
+export function clearSession() {
+  Cookies.remove('token')
+  Cookies.remove('username')
+  localStorage.removeItem('token')
+  localStorage.removeItem('username')
 }
