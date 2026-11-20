@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.dao.mapper;
 
-/* LinkStamp changes: write visit timestamps and query daily and cumulative visit identity. */
+/* LinkStamp changes: preserve visit timestamps and use indexed existence queries for daily and cumulative visit identity. */
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -48,23 +48,29 @@ public interface LinkAccessLogsMapper extends BaseMapper<LinkAccessLogsDO> {
             """)
     void insertVisit(@Param("log") LinkAccessLogsDO log, @Param("visitedAt") String visitedAt);
 
+    /** Returns presence flags in pv (all history) and uv (the visit's day). */
     @Select("""
-            SELECT COUNT(*) AS pv,
-                   COALESCE(SUM(create_time >= #{dayStart} AND create_time < #{dayEnd}), 0) AS uv
-            FROM t_link_access_logs
-            WHERE full_short_url = #{url} AND user = #{visitor}
+            SELECT EXISTS (
+                SELECT 1 FROM t_link_access_logs WHERE full_short_url = #{url} AND user = #{visitor}
+            ) AS pv, EXISTS (
+                SELECT 1 FROM t_link_access_logs WHERE full_short_url = #{url} AND user = #{visitor}
+                  AND create_time >= #{dayStart} AND create_time < #{dayEnd}
+            ) AS uv
             """)
-    LinkAccessStatsDO countVisitor(@Param("url") String url, @Param("visitor") String visitor,
-                                  @Param("dayStart") String dayStart, @Param("dayEnd") String dayEnd);
+    LinkAccessStatsDO findVisitorPresence(@Param("url") String url, @Param("visitor") String visitor,
+                                         @Param("dayStart") String dayStart, @Param("dayEnd") String dayEnd);
 
+    /** Uses the same presence fields as findVisitorPresence for an IP address. */
     @Select("""
-            SELECT COUNT(*) AS pv,
-                   COALESCE(SUM(create_time >= #{dayStart} AND create_time < #{dayEnd}), 0) AS uv
-            FROM t_link_access_logs
-            WHERE full_short_url = #{url} AND ip = #{ip}
+            SELECT EXISTS (
+                SELECT 1 FROM t_link_access_logs WHERE full_short_url = #{url} AND ip = #{ip}
+            ) AS pv, EXISTS (
+                SELECT 1 FROM t_link_access_logs WHERE full_short_url = #{url} AND ip = #{ip}
+                  AND create_time >= #{dayStart} AND create_time < #{dayEnd}
+            ) AS uv
             """)
-    LinkAccessStatsDO countIp(@Param("url") String url, @Param("ip") String ip,
-                             @Param("dayStart") String dayStart, @Param("dayEnd") String dayEnd);
+    LinkAccessStatsDO findIpPresence(@Param("url") String url, @Param("ip") String ip,
+                                    @Param("dayStart") String dayStart, @Param("dayEnd") String dayEnd);
 
     /**
      * 根据短链接获取指定日期内高频访问IP数据

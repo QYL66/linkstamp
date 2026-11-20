@@ -17,7 +17,7 @@
 
 package io.github.qyl66.linkstamp.project.mq.consumer;
 
-/* LinkStamp changes: persist visit statistics transactionally and recover unconfirmed Stream messages. */
+/* LinkStamp changes: persist statistics transactionally, drain Stream batches, and use indexed visitor/IP presence checks. */
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpUtil;
@@ -147,13 +147,22 @@ public class ShortLinkStatsSaveConsumer {
     @Scheduled(fixedDelayString = "${short-link.stats.retry-poll-ms:1000}")
     public void poll() {
         var stream = stringRedisTemplate.<String, String>opsForStream();
-        var records = stream.read(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, consumerName),
-                StreamReadOptions.empty().count(25),
-                StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()));
-        if (records != null) {
-            records.forEach(record -> process(record, 1));
+        while (!Thread.currentThread().isInterrupted()) {
+            // Recover pending entries even when new messages keep arriving.
+            retryPending();
+            var records = stream.read(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, consumerName),
+                    StreamReadOptions.empty().count(25),
+                    StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()));
+            if (records == null || records.isEmpty()) {
+                return;
+            }
+            for (var record : records) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
+                process(record, 1);
+            }
         }
-        retryPending();
     }
 
     private void retryPending() {
@@ -233,10 +242,10 @@ public class ShortLinkStatsSaveConsumer {
         var sqlDay = java.sql.Date.valueOf(day);
         String dayStart = day.atStartOfDay().format(SQL_TIME);
         String dayEnd = day.plusDays(1).atStartOfDay().format(SQL_TIME);
-        LinkAccessStatsDO visitorCounts = linkAccessLogsMapper.countVisitor(fullShortUrl, statsRecord.getUv(), dayStart, dayEnd);
-        LinkAccessStatsDO ipCounts = linkAccessLogsMapper.countIp(fullShortUrl, statsRecord.getRemoteAddr(), dayStart, dayEnd);
-        int dailyUv = visitorCounts.getUv() == 0 ? 1 : 0;
-        int dailyUip = ipCounts.getUv() == 0 ? 1 : 0;
+        LinkAccessStatsDO visitorPresence = linkAccessLogsMapper.findVisitorPresence(fullShortUrl, statsRecord.getUv(), dayStart, dayEnd);
+        LinkAccessStatsDO ipPresence = linkAccessLogsMapper.findIpPresence(fullShortUrl, statsRecord.getRemoteAddr(), dayStart, dayEnd);
+        int dailyUv = visitorPresence.getUv() == 0 ? 1 : 0;
+        int dailyUip = ipPresence.getUv() == 0 ? 1 : 0;
         LinkAccessStatsDO linkAccessStatsDO = LinkAccessStatsDO.builder()
                 .pv(1)
                 .uv(dailyUv)
@@ -303,7 +312,7 @@ public class ShortLinkStatsSaveConsumer {
                 .build();
         linkAccessLogsMapper.insertVisit(linkAccessLogsDO, visitedAt.format(SQL_TIME));
         shortLinkMapper.incrementStats(gid, fullShortUrl, 1,
-                visitorCounts.getPv() == 0 ? 1 : 0, ipCounts.getPv() == 0 ? 1 : 0);
+                visitorPresence.getPv() == 0 ? 1 : 0, ipPresence.getPv() == 0 ? 1 : 0);
         LinkStatsTodayDO linkStatsTodayDO = LinkStatsTodayDO.builder()
                 .todayPv(1)
                 .todayUv(dailyUv)

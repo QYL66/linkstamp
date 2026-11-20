@@ -126,6 +126,17 @@ def run(options):
     def acknowledged(record_id):
         return not redis("XRANGE", STREAM, record_id, record_id)
 
+    indexes = sql("SELECT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) "
+                  "FROM information_schema.statistics WHERE table_schema=DATABASE() "
+                  "AND table_name='t_link_access_logs' "
+                  "AND index_name IN ('idx_link_user_time','idx_link_ip_time') "
+                  "GROUP BY index_name ORDER BY index_name")
+    assert indexes.splitlines() == [
+        "idx_link_ip_time\tfull_short_url,ip,create_time",
+        "idx_link_user_time\tfull_short_url,user,create_time"
+    ], indexes
+    print("PASS indexed visitor/IP presence lookups", flush=True)
+
     first, gid = account("138")
     second, other_gid = account("139")
     assert gid.isalnum() and other_gid.isalnum()

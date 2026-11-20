@@ -73,9 +73,9 @@ flowchart LR
 
 ### 异步访问统计
 
-跳转时将访问事件写入 Redis Stream。消费者在同一 MySQL 事务中记录消息 ID、访问明细和汇总数据，提交成功后再确认消息。待确认消息达到空闲时间后重新认领，格式错误或达到 5 次处理上限的消息转入死信 Stream。若投递失败，服务记录日志并继续完成跳转。
+跳转时将访问事件写入 Redis Stream。消费者在同一 MySQL 事务中记录消息 ID、访问明细和汇总数据，提交成功后再确认消息。有消息时连续读取批次，空闲后再等待下次轮询，并在批次间检查待重试消息。格式错误或达到 5 次处理上限的消息转入死信 Stream。若投递失败，服务记录日志并继续完成跳转。
 
-PV 按访问计数。单链接的日报按 UTC+8 自然日对访客 Cookie 和 IP 分别去重。选定区间的总览在整个区间去重，累计值按该短链的历史访问去重。分组统计在所选分组和时间范围内按 Cookie 与 IP 去重，访客 Cookie 的作用域为单条短链。地区查询默认关闭，开启方式见[运行数据](#运行数据)。
+PV 按访问计数。单链接的日报按 UTC+8 自然日对访客 Cookie 和 IP 分别去重，首次访问判断通过存在性查询和对应的联合索引完成。选定区间的总览在整个区间去重，累计值按该短链的历史访问去重。分组统计在所选分组和时间范围内按 Cookie 与 IP 去重，访客 Cookie 的作用域为单条短链。地区查询默认关闭，开启方式见[运行数据](#运行数据)。
 
 [自定义短码设计与故障回归](docs/short-code-design.md)
 
@@ -108,7 +108,7 @@ PV 按访问计数。单链接的日报按 UTC+8 自然日对访客 Cookie 和 I
 mysql.exe -h 127.0.0.1 -P 13307 -u root -p --default-character-set=utf8mb4 linkstamp -e "source resources/database/link.sql"
 ```
 
-已使用旧版数据库时，停掉旧后端后先在原库执行[统计迁移 SQL](resources/database/migrate-visit-stats.sql)，再启动新版。迁移会添加消息确认所需的表，并继续使用已有数据和本地加密密钥。
+已使用旧版数据库时，停掉旧后端后先在原库执行[统计迁移 SQL](resources/database/migrate-visit-stats.sql)，再启动新版。迁移会添加消息确认表，以及访问明细上按短链、访客或 IP、访问时间排列的两个联合索引。执行过早期版本迁移的数据库也要重新执行更新后的脚本，已有同名索引会跳过。
 
 ```powershell
 mysql.exe -h 127.0.0.1 -P 13307 -u root -p --default-character-set=utf8mb4 linkstamp -e "source resources/database/migrate-visit-stats.sql"
