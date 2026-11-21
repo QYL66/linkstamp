@@ -1,7 +1,0 @@
-LinkStamp
-Copyright and license notices for incorporated source are retained in the files.
-Upstream source: https://gitee.com/nageoffer/shortlink
-Baseline revision: 02da2983c9211928cb473bbbaac67b93f925c138
-Distributed under the Apache License, Version 2.0. See LICENSE.
-LinkStamp changes include project packaging, the Java package namespace, console assets,
-and removal of promotional references. Third-party dependency licenses remain applicable.
