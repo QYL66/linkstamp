@@ -217,4 +217,4 @@ linkstamp/
 
 回归脚本和测试环境见[本机验收说明](docs/regression.md)。
 
-热点跳转的 JMeter 对照和统计增量对账见[性能压测](docs/benchmark.md)。
+JMeter 同档对照、统计增量对账和新版容量边界见 [LinkStamp 同机热点压测报告](docs/benchmark-report.md)。
