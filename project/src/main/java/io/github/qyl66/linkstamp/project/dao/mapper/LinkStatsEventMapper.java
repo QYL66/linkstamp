@@ -21,12 +21,27 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 /** Records the Stream entry ID in the same transaction as its statistics. */
 public interface LinkStatsEventMapper {
 
     @Select("SELECT 1 FROM t_link_stats_event LIMIT 1")
     Integer checkTable();
 
-    @Insert("INSERT IGNORE INTO t_link_stats_event (stream_id) VALUES (#{id})")
-    int claimEvent(@Param("id") String id);
+    @Select("""
+            <script>
+            SELECT stream_id FROM t_link_stats_event WHERE stream_id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </script>
+            """)
+    List<String> findCommitted(@Param("ids") List<String> ids);
+
+    @Insert("""
+            <script>
+            INSERT INTO t_link_stats_event (stream_id) VALUES
+            <foreach collection="ids" item="id" separator=",">(#{id})</foreach>
+            </script>
+            """)
+    void insertEvents(@Param("ids") List<String> ids);
 }

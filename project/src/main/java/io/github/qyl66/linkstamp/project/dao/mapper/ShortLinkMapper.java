@@ -25,17 +25,29 @@ import io.github.qyl66.linkstamp.project.dao.entity.ShortLinkDO;
 import io.github.qyl66.linkstamp.project.dto.req.ShortLinkPageReqDTO;
 import io.github.qyl66.linkstamp.project.dto.req.ShortLinkRecycleBinPageReqDTO;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 /**
  * 短链接持久层
  */
 public interface ShortLinkMapper extends BaseMapper<ShortLinkDO> {
 
+    @Select("""
+            SELECT id FROM t_link WHERE gid = #{gid} AND full_short_url = #{url} AND del_time = 0 FOR UPDATE
+            """)
+    Long lockStatsRow(@Param("gid") String gid, @Param("url") String url);
+
+    @Select("""
+            SELECT id FROM t_link WHERE gid = #{gid} AND full_short_url = #{url}
+            ORDER BY del_time DESC LIMIT 1 FOR UPDATE
+            """)
+    Long lockLastArchivedStatsRow(@Param("gid") String gid, @Param("url") String url);
+
     /**
      * 短链接访问统计自增
      */
     void incrementStats(@Param("gid") String gid,
-                        @Param("fullShortUrl") String fullShortUrl,
+                        @Param("id") Long id,
                         @Param("totalPv") Integer totalPv,
                         @Param("totalUv") Integer totalUv,
                         @Param("totalUip") Integer totalUip);

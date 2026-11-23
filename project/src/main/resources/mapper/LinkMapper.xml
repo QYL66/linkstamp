@@ -27,7 +27,7 @@
             total_uv  = total_uv + #{totalUv},
             total_uip = total_uip + #{totalUip}
         WHERE gid = #{gid}
-          AND full_short_url = #{fullShortUrl}
+          AND id = #{id}
     </update>
 
     <!-- 分页查询短链接 -->

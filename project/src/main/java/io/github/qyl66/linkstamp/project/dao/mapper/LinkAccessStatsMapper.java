@@ -37,11 +37,17 @@ public interface LinkAccessStatsMapper extends BaseMapper<LinkAccessStatsDO> {
     /**
      * 记录基础访问监控数据
      */
-    @Insert("INSERT INTO " +
-            "t_link_access_stats (full_short_url, date, pv, uv, uip, hour, weekday, create_time, update_time, del_flag) " +
-            "VALUES( #{linkAccessStats.fullShortUrl}, #{linkAccessStats.date}, #{linkAccessStats.pv}, #{linkAccessStats.uv}, #{linkAccessStats.uip}, #{linkAccessStats.hour}, #{linkAccessStats.weekday}, NOW(), NOW(), 0) " +
-            "ON DUPLICATE KEY UPDATE pv = pv +  #{linkAccessStats.pv}, uv = uv + #{linkAccessStats.uv}, uip = uip + #{linkAccessStats.uip};")
-    void shortLinkStats(@Param("linkAccessStats") LinkAccessStatsDO linkAccessStatsDO);
+    @Insert("""
+            <script>
+            INSERT INTO t_link_access_stats (full_short_url, date, pv, uv, uip, hour, weekday, create_time, update_time, del_flag)
+            VALUES
+            <foreach collection="rows" item="row" separator=",">
+              (#{row.fullShortUrl}, #{row.date}, #{row.pv}, #{row.uv}, #{row.uip}, #{row.hour}, #{row.weekday}, NOW(), NOW(), 0)
+            </foreach>
+            ON DUPLICATE KEY UPDATE pv = pv + VALUES(pv), uv = uv + VALUES(uv), uip = uip + VALUES(uip)
+            </script>
+            """)
+    void upsertBatch(@Param("rows") List<LinkAccessStatsDO> rows);
 
     @Select("""
             SELECT DATE(log.create_time) AS date, COUNT(*) AS pv,

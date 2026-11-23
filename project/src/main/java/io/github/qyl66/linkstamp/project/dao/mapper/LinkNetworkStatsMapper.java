@@ -37,11 +37,17 @@ public interface LinkNetworkStatsMapper extends BaseMapper<LinkNetworkStatsDO> {
     /**
      * 记录访问设备监控数据
      */
-    @Insert("INSERT INTO " +
-            "t_link_network_stats (full_short_url, date, cnt, network, create_time, update_time, del_flag) " +
-            "VALUES( #{linkNetworkStats.fullShortUrl}, #{linkNetworkStats.date}, #{linkNetworkStats.cnt}, #{linkNetworkStats.network}, NOW(), NOW(), 0) " +
-            "ON DUPLICATE KEY UPDATE cnt = cnt +  #{linkNetworkStats.cnt};")
-    void shortLinkNetworkState(@Param("linkNetworkStats") LinkNetworkStatsDO linkNetworkStatsDO);
+    @Insert("""
+            <script>
+            INSERT INTO t_link_network_stats (full_short_url, date, cnt, network, create_time, update_time, del_flag)
+            VALUES
+            <foreach collection="rows" item="row" separator=",">
+              (#{row.fullShortUrl}, #{row.date}, #{row.cnt}, #{row.network}, NOW(), NOW(), 0)
+            </foreach>
+            ON DUPLICATE KEY UPDATE cnt = cnt + VALUES(cnt)
+            </script>
+            """)
+    void upsertBatch(@Param("rows") List<LinkNetworkStatsDO> rows);
 
     /**
      * 根据短链接获取指定日期内访问网络监控数据

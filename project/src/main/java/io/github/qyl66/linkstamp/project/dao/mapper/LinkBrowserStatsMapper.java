@@ -38,11 +38,17 @@ public interface LinkBrowserStatsMapper extends BaseMapper<LinkBrowserStatsDO> {
     /**
      * 记录浏览器访问监控数据
      */
-    @Insert("INSERT INTO " +
-            "t_link_browser_stats (full_short_url, date, cnt, browser, create_time, update_time, del_flag) " +
-            "VALUES( #{linkBrowserStats.fullShortUrl}, #{linkBrowserStats.date}, #{linkBrowserStats.cnt}, #{linkBrowserStats.browser}, NOW(), NOW(), 0) " +
-            "ON DUPLICATE KEY UPDATE cnt = cnt +  #{linkBrowserStats.cnt};")
-    void shortLinkBrowserState(@Param("linkBrowserStats") LinkBrowserStatsDO linkBrowserStatsDO);
+    @Insert("""
+            <script>
+            INSERT INTO t_link_browser_stats (full_short_url, date, cnt, browser, create_time, update_time, del_flag)
+            VALUES
+            <foreach collection="rows" item="row" separator=",">
+              (#{row.fullShortUrl}, #{row.date}, #{row.cnt}, #{row.browser}, NOW(), NOW(), 0)
+            </foreach>
+            ON DUPLICATE KEY UPDATE cnt = cnt + VALUES(cnt)
+            </script>
+            """)
+    void upsertBatch(@Param("rows") List<LinkBrowserStatsDO> rows);
 
     /**
      * 根据短链接获取指定日期内浏览器监控数据

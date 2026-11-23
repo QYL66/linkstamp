@@ -1,0 +1,16 @@
+{
+  "burst_events": 516,
+  "active_consumers": 2,
+  "physical_shards": [
+    1,
+    14
+  ],
+  "visits_committed_before_first_move": 120,
+  "visits_committed_after_first_move": 396,
+  "daily_uv_uip_verified": true,
+  "move_and_return_preserved_cumulative_counts": true,
+  "legacy_cookie_collation_verified": true,
+  "committed_pending_replay_added_no_visits": true,
+  "failed_batch_rolled_back_then_isolated_poison": true,
+  "dead_letters": 1
+}

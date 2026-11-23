@@ -17,72 +17,49 @@
 
 package io.github.qyl66.linkstamp.project.mq.consumer;
 
-/* LinkStamp changes: persist statistics transactionally, drain Stream batches, and use indexed visitor/IP presence checks. */
-
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpUtil;
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONObject;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkAccessLogsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkAccessStatsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkBrowserStatsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkDeviceStatsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkLocaleStatsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkNetworkStatsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkOsStatsDO;
-import io.github.qyl66.linkstamp.project.dao.entity.LinkStatsTodayDO;
-import io.github.qyl66.linkstamp.project.dao.entity.ShortLinkGotoDO;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkAccessLogsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkAccessStatsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkBrowserStatsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkDeviceStatsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkLocaleStatsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkNetworkStatsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkOsStatsMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkStatsTodayMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.LinkStatsEventMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.ShortLinkGotoMapper;
-import io.github.qyl66.linkstamp.project.dao.mapper.ShortLinkMapper;
 import io.github.qyl66.linkstamp.project.dto.biz.ShortLinkStatsRecordDTO;
+import io.github.qyl66.linkstamp.project.mq.consumer.VisitStatsBatchWriter.Visit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.connection.stream.MapRecord;
-import org.springframework.data.redis.connection.stream.RecordId;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.domain.Range;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.Consumer;
+import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.ReadOffset;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.UUID;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 
 import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.LOCK_GID_UPDATE_KEY;
-import static io.github.qyl66.linkstamp.project.common.constant.ShortLinkConstant.AMAP_REMOTE_URL;
-import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
-import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
 import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_DEAD_LETTER_KEY;
+import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
+import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
+import static io.github.qyl66.linkstamp.project.common.constant.ShortLinkConstant.AMAP_REMOTE_URL;
 
-/**
- * 短链接监控状态保存消息队列消费者
- */
 @Slf4j
 @Component
 @DependsOn("shortLinkStatsStreamInitializeTask")
@@ -90,14 +67,19 @@ import static io.github.qyl66.linkstamp.project.common.constant.RedisKeyConstant
 public class ShortLinkStatsSaveConsumer {
 
     private static final int MAX_ATTEMPTS = 5;
-    private static final DateTimeFormatter SQL_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
-    private static final ZoneOffset STATS_OFFSET = ZoneOffset.ofHours(8);
     private static final DefaultRedisScript<Long> ACKNOWLEDGE = new DefaultRedisScript<>(
             """
-            if redis.call('XACK', KEYS[1], ARGV[1], ARGV[2]) == 1 then
-                return redis.call('XDEL', KEYS[1], ARGV[2])
+            local acknowledged = {}
+            for index = 2, #ARGV do
+                local id = ARGV[index]
+                if redis.call('XACK', KEYS[1], ARGV[1], id) == 1 then
+                    acknowledged[#acknowledged + 1] = id
+                end
             end
-            return 0
+            if #acknowledged > 0 then
+                redis.call('XDEL', KEYS[1], unpack(acknowledged))
+            end
+            return #acknowledged
             """, Long.class);
     private static final DefaultRedisScript<Long> DEAD_LETTER = new DefaultRedisScript<>(
             """
@@ -108,218 +90,174 @@ public class ShortLinkStatsSaveConsumer {
             """, Long.class);
 
     private final String consumerName = "stats-" + UUID.randomUUID();
-    private final ShortLinkMapper shortLinkMapper;
-    private final ShortLinkGotoMapper shortLinkGotoMapper;
     private final RedissonClient redissonClient;
-    private final LinkAccessStatsMapper linkAccessStatsMapper;
-    private final LinkLocaleStatsMapper linkLocaleStatsMapper;
-    private final LinkOsStatsMapper linkOsStatsMapper;
-    private final LinkBrowserStatsMapper linkBrowserStatsMapper;
-    private final LinkAccessLogsMapper linkAccessLogsMapper;
-    private final LinkDeviceStatsMapper linkDeviceStatsMapper;
-    private final LinkNetworkStatsMapper linkNetworkStatsMapper;
-    private final LinkStatsTodayMapper linkStatsTodayMapper;
-    private final StringRedisTemplate stringRedisTemplate;
-    private final LinkStatsEventMapper linkStatsEventMapper;
-    private final TransactionTemplate transactionTemplate;
+    private final StringRedisTemplate redis;
+    private final VisitStatsBatchWriter writer;
 
     @Value("${short-link.stats.retry-idle-ms:30000}")
     private long retryIdleMillis;
 
+    @Value("${short-link.stats.batch-size:128}")
+    private int batchSize;
+
     @Value("${short-link.stats.locale.amap-key}")
     private String statsLocaleAmapKey;
+
+    @Scheduled(fixedDelayString = "${short-link.stats.retry-poll-ms:250}")
+    public void poll() {
+        var stream = redis.<String, String>opsForStream();
+        long lastRetry = System.nanoTime();
+        retryPending();
+        while (!Thread.currentThread().isInterrupted()) {
+            if (System.nanoTime() - lastRetry >= TimeUnit.SECONDS.toNanos(1)) {
+                retryPending();
+                lastRetry = System.nanoTime();
+            }
+            var records = stream.read(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, consumerName),
+                    StreamReadOptions.empty().count(Math.max(1, Math.min(batchSize, 512))),
+                    StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()));
+            if (records == null || records.isEmpty()) {
+                return;
+            }
+            process(records, Map.of());
+        }
+    }
+
+    private void retryPending() {
+        Duration idle = Duration.ofMillis(retryIdleMillis);
+        var stream = redis.<String, String>opsForStream();
+        var pending = stream.pending(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY,
+                Range.unbounded(), 50, idle);
+        if (pending == null || pending.isEmpty()) {
+            return;
+        }
+        Map<RecordId, Long> attempts = new LinkedHashMap<>();
+        pending.forEach(entry -> attempts.put(entry.getId(), entry.getTotalDeliveryCount() + 1));
+        var claimed = stream.claim(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY,
+                consumerName, idle, attempts.keySet().toArray(RecordId[]::new));
+        if (claimed != null && !claimed.isEmpty()) {
+            process(claimed, attempts);
+        }
+    }
+
+    private void process(List<MapRecord<String, String, String>> messages, Map<RecordId, Long> attempts) {
+        List<Visit> batch = new ArrayList<>(messages.size());
+        Map<String, Optional<JSONObject>> locations = new HashMap<>();
+        for (var message : messages) {
+            String payload = message.getValue().get("statsRecord");
+            ShortLinkStatsRecordDTO record = parse(payload);
+            if (record == null) {
+                deadLetter(message.getId().getValue(), "invalid-payload", payload);
+            } else {
+                JSONObject locale = locations.computeIfAbsent(record.getRemoteAddr(),
+                        ip -> Optional.ofNullable(lookupLocale(ip))).orElse(null);
+                batch.add(new Visit(message.getId().getValue(), record, locale));
+            }
+        }
+        if (batch.isEmpty()) {
+            return;
+        }
+
+        try {
+            persistUnderReadLocks(batch);
+        } catch (CompletionException ex) {
+            log.warn("Could not acquire route read locks for the statistics batch", ex);
+            return;
+        } catch (RuntimeException ex) {
+            log.warn("Statistics transaction failed for {} entries starting at {}", batch.size(), batch.get(0).id(), ex);
+            if (!attempts.isEmpty()) {
+                // The first failure rolls the batch back. On redelivery, isolate poison records.
+                recoverIndividually(messages, attempts, batch);
+            }
+            return;
+        }
+        acknowledge(batch);
+    }
+
+    private void recoverIndividually(List<MapRecord<String, String, String>> messages,
+                                     Map<RecordId, Long> attempts, List<Visit> batch) {
+        Map<String, MapRecord<String, String, String>> byId = new HashMap<>();
+        messages.forEach(message -> byId.put(message.getId().getValue(), message));
+        List<Visit> committed = new ArrayList<>();
+        for (Visit visit : batch) {
+            try {
+                persistUnderReadLocks(List.of(visit));
+                committed.add(visit);
+            } catch (CompletionException ex) {
+                log.warn("Could not acquire the route read lock for Stream entry {}", visit.id(), ex);
+            } catch (RuntimeException ex) {
+                var message = byId.get(visit.id());
+                long attempt = attempts.get(message.getId());
+                log.warn("Visit statistics failed for Stream entry {} on attempt {}", visit.id(), attempt, ex);
+                if (attempt >= MAX_ATTEMPTS) {
+                    deadLetter(visit.id(), ex.getClass().getSimpleName(), message.getValue().get("statsRecord"));
+                }
+            }
+        }
+        if (!committed.isEmpty()) {
+            acknowledge(committed);
+        }
+    }
+
+    private void persistUnderReadLocks(List<Visit> visits) {
+        long owner = Thread.currentThread().getId();
+        List<ReadLock> locks = new ArrayList<>();
+        try {
+            for (String url : visits.stream().map(Visit::url).distinct().sorted().toList()) {
+                RLock lock = redissonClient.getReadWriteLock(String.format(LOCK_GID_UPDATE_KEY, url)).readLock();
+                locks.add(new ReadLock(lock, lock.lockAsync(owner).toCompletableFuture()));
+            }
+            CompletableFuture.allOf(locks.stream().map(ReadLock::acquired)
+                    .toArray(CompletableFuture[]::new)).join();
+            writer.persist(visits);
+        } finally {
+            CompletableFuture.allOf(locks.stream().map(held -> held.acquired().handle((ignored, error) -> error == null)
+                    .thenCompose(acquired -> acquired ? held.lock().unlockAsync(owner) : CompletableFuture.completedFuture(null))
+                    .exceptionally(error -> {
+                        log.warn("Could not release statistics read lock {}", held.lock().getName(), error);
+                        return null;
+                    })).toArray(CompletableFuture[]::new)).join();
+        }
+    }
+
+    private void acknowledge(List<Visit> visits) {
+        List<String> args = new ArrayList<>(visits.size() + 1);
+        args.add(SHORT_LINK_STATS_STREAM_GROUP_KEY);
+        visits.forEach(visit -> args.add(visit.id()));
+        redis.execute(ACKNOWLEDGE, List.of(SHORT_LINK_STATS_STREAM_TOPIC_KEY), args.toArray(String[]::new));
+    }
+
+    private void deadLetter(String id, String reason, String payload) {
+        redis.execute(DEAD_LETTER, List.of(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_DEAD_LETTER_KEY),
+                SHORT_LINK_STATS_STREAM_GROUP_KEY, id, reason, payload == null ? "" : payload);
+        log.warn("Moved statistics Stream entry {} to dead letter storage ({})", id, reason);
+    }
+
+    private static ShortLinkStatsRecordDTO parse(String payload) {
+        try {
+            ShortLinkStatsRecordDTO record = payload == null ? null : JSON.parseObject(payload, ShortLinkStatsRecordDTO.class);
+            if (record != null && record.getCurrentDate() != null && StrUtil.isNotBlank(record.getUv())
+                    && StrUtil.isNotBlank(record.getFullShortUrl()) && StrUtil.isNotBlank(record.getRemoteAddr())) {
+                return record;
+            }
+        } catch (JSONException ignored) {
+            // Malformed entries follow the same dead-letter path as incomplete entries.
+        }
+        return null;
+    }
 
     private JSONObject lookupLocale(String ip) {
         if (StrUtil.isBlank(statsLocaleAmapKey)) {
             return null;
         }
         try {
-            Map<String, Object> parameters = new HashMap<>();
-            parameters.put("key", statsLocaleAmapKey);
-            parameters.put("ip", ip);
-            return JSON.parseObject(HttpUtil.get(AMAP_REMOTE_URL, parameters, 2000));
+            return JSON.parseObject(HttpUtil.get(AMAP_REMOTE_URL, Map.of("key", statsLocaleAmapKey, "ip", ip), 2000));
         } catch (RuntimeException ex) {
             log.debug("IP location lookup unavailable");
             return null;
         }
     }
 
-    @Scheduled(fixedDelayString = "${short-link.stats.retry-poll-ms:1000}")
-    public void poll() {
-        var stream = stringRedisTemplate.<String, String>opsForStream();
-        while (!Thread.currentThread().isInterrupted()) {
-            // Recover pending entries even when new messages keep arriving.
-            retryPending();
-            var records = stream.read(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, consumerName),
-                    StreamReadOptions.empty().count(25),
-                    StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()));
-            if (records == null || records.isEmpty()) {
-                return;
-            }
-            for (var record : records) {
-                if (Thread.currentThread().isInterrupted()) {
-                    return;
-                }
-                process(record, 1);
-            }
-        }
-    }
-
-    private void retryPending() {
-        Duration idle = Duration.ofMillis(retryIdleMillis);
-        var stream = stringRedisTemplate.<String, String>opsForStream();
-        var pending = stream.pending(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY,
-                Range.unbounded(), 50, idle);
-        if (pending == null) {
-            return;
-        }
-        for (var entry : pending) {
-            var claimed = stream.claim(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY,
-                    consumerName, idle, entry.getId());
-            if (claimed != null) {
-                claimed.forEach(record -> process(record, entry.getTotalDeliveryCount() + 1));
-            }
-        }
-    }
-
-    private void process(MapRecord<String, String, String> message, long attempt) {
-        RecordId id = message.getId();
-        String payload = message.getValue().get("statsRecord");
-        ShortLinkStatsRecordDTO record;
-        try {
-            record = payload == null ? null : JSON.parseObject(payload, ShortLinkStatsRecordDTO.class);
-        } catch (com.alibaba.fastjson2.JSONException ex) {
-            record = null;
-        }
-        if (record == null || record.getCurrentDate() == null || StrUtil.isBlank(record.getUv())
-                || StrUtil.isBlank(record.getFullShortUrl()) || StrUtil.isBlank(record.getRemoteAddr())) {
-            deadLetter(id, "invalid-payload", payload);
-            return;
-        }
-
-        ShortLinkStatsRecordDTO visit = record;
-        JSONObject location = lookupLocale(visit.getRemoteAddr());
-        RLock lock = redissonClient.getReadWriteLock(String.format(LOCK_GID_UPDATE_KEY, visit.getFullShortUrl())).writeLock();
-        lock.lock();
-        try {
-            try {
-                transactionTemplate.executeWithoutResult(status -> {
-                    if (linkStatsEventMapper.claimEvent(id.getValue()) != 0) {
-                        saveVisit(visit, location);
-                    }
-                });
-            } catch (RuntimeException ex) {
-                log.warn("Visit statistics failed for Stream entry {} on attempt {}", id, attempt, ex);
-                if (attempt >= MAX_ATTEMPTS) {
-                    deadLetter(id, ex.getClass().getSimpleName(), payload);
-                }
-                return;
-            }
-            stringRedisTemplate.execute(ACKNOWLEDGE, List.of(SHORT_LINK_STATS_STREAM_TOPIC_KEY),
-                    SHORT_LINK_STATS_STREAM_GROUP_KEY, id.getValue());
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private void deadLetter(RecordId id, String reason, String payload) {
-        stringRedisTemplate.execute(DEAD_LETTER,
-                List.of(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_DEAD_LETTER_KEY),
-                SHORT_LINK_STATS_STREAM_GROUP_KEY, id.getValue(), reason, payload == null ? "" : payload);
-        log.warn("Moved statistics Stream entry {} to dead letter storage ({})", id, reason);
-    }
-
-    private void saveVisit(ShortLinkStatsRecordDTO statsRecord, JSONObject localeResultObj) {
-        String fullShortUrl = statsRecord.getFullShortUrl();
-        ShortLinkGotoDO route = shortLinkGotoMapper.selectOne(Wrappers.<ShortLinkGotoDO>lambdaQuery()
-                .eq(ShortLinkGotoDO::getFullShortUrl, fullShortUrl));
-        if (route == null) {
-            throw new IllegalStateException("No route for statistics event");
-        }
-        String gid = route.getGid();
-        LocalDateTime visitedAt = LocalDateTime.ofInstant(statsRecord.getCurrentDate().toInstant(), STATS_OFFSET);
-        var day = visitedAt.toLocalDate();
-        var sqlDay = java.sql.Date.valueOf(day);
-        String dayStart = day.atStartOfDay().format(SQL_TIME);
-        String dayEnd = day.plusDays(1).atStartOfDay().format(SQL_TIME);
-        LinkAccessStatsDO visitorPresence = linkAccessLogsMapper.findVisitorPresence(fullShortUrl, statsRecord.getUv(), dayStart, dayEnd);
-        LinkAccessStatsDO ipPresence = linkAccessLogsMapper.findIpPresence(fullShortUrl, statsRecord.getRemoteAddr(), dayStart, dayEnd);
-        int dailyUv = visitorPresence.getUv() == 0 ? 1 : 0;
-        int dailyUip = ipPresence.getUv() == 0 ? 1 : 0;
-        LinkAccessStatsDO linkAccessStatsDO = LinkAccessStatsDO.builder()
-                .pv(1)
-                .uv(dailyUv)
-                .uip(dailyUip)
-                .hour(visitedAt.getHour())
-                .weekday(visitedAt.getDayOfWeek().getValue())
-                .fullShortUrl(fullShortUrl)
-                .date(sqlDay)
-                .build();
-        linkAccessStatsMapper.shortLinkStats(linkAccessStatsDO);
-        String actualProvince = "未知";
-        String actualCity = "未知";
-        if (localeResultObj != null && "10000".equals(localeResultObj.getString("infocode"))) {
-            String province = localeResultObj.getString("province");
-            boolean unknownFlag = StrUtil.equals(province, "[]");
-            LinkLocaleStatsDO linkLocaleStatsDO = LinkLocaleStatsDO.builder()
-                    .province(actualProvince = unknownFlag ? actualProvince : province)
-                    .city(actualCity = unknownFlag ? actualCity : localeResultObj.getString("city"))
-                    .adcode(unknownFlag ? "未知" : localeResultObj.getString("adcode"))
-                    .cnt(1)
-                    .fullShortUrl(fullShortUrl)
-                    .country("中国")
-                    .date(sqlDay)
-                    .build();
-            linkLocaleStatsMapper.shortLinkLocaleState(linkLocaleStatsDO);
-        }
-        LinkOsStatsDO linkOsStatsDO = LinkOsStatsDO.builder()
-                .os(statsRecord.getOs())
-                .cnt(1)
-                .fullShortUrl(fullShortUrl)
-                .date(sqlDay)
-                .build();
-        linkOsStatsMapper.shortLinkOsState(linkOsStatsDO);
-        LinkBrowserStatsDO linkBrowserStatsDO = LinkBrowserStatsDO.builder()
-                .browser(statsRecord.getBrowser())
-                .cnt(1)
-                .fullShortUrl(fullShortUrl)
-                .date(sqlDay)
-                .build();
-        linkBrowserStatsMapper.shortLinkBrowserState(linkBrowserStatsDO);
-        LinkDeviceStatsDO linkDeviceStatsDO = LinkDeviceStatsDO.builder()
-                .device(statsRecord.getDevice())
-                .cnt(1)
-                .fullShortUrl(fullShortUrl)
-                .date(sqlDay)
-                .build();
-        linkDeviceStatsMapper.shortLinkDeviceState(linkDeviceStatsDO);
-        LinkNetworkStatsDO linkNetworkStatsDO = LinkNetworkStatsDO.builder()
-                .network(statsRecord.getNetwork())
-                .cnt(1)
-                .fullShortUrl(fullShortUrl)
-                .date(sqlDay)
-                .build();
-        linkNetworkStatsMapper.shortLinkNetworkState(linkNetworkStatsDO);
-        LinkAccessLogsDO linkAccessLogsDO = LinkAccessLogsDO.builder()
-                .user(statsRecord.getUv())
-                .ip(statsRecord.getRemoteAddr())
-                .browser(statsRecord.getBrowser())
-                .os(statsRecord.getOs())
-                .network(statsRecord.getNetwork())
-                .device(statsRecord.getDevice())
-                .locale(StrUtil.join("-", "中国", actualProvince, actualCity))
-                .fullShortUrl(fullShortUrl)
-                .build();
-        linkAccessLogsMapper.insertVisit(linkAccessLogsDO, visitedAt.format(SQL_TIME));
-        shortLinkMapper.incrementStats(gid, fullShortUrl, 1,
-                visitorPresence.getPv() == 0 ? 1 : 0, ipPresence.getPv() == 0 ? 1 : 0);
-        LinkStatsTodayDO linkStatsTodayDO = LinkStatsTodayDO.builder()
-                .todayPv(1)
-                .todayUv(dailyUv)
-                .todayUip(dailyUip)
-                .fullShortUrl(fullShortUrl)
-                .date(sqlDay)
-                .build();
-        linkStatsTodayMapper.shortLinkTodayState(linkStatsTodayDO);
+    private record ReadLock(RLock lock, CompletableFuture<Void> acquired) {
     }
 }
