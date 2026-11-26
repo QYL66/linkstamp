@@ -1,34 +1,41 @@
-<!-- LinkStamp changes: project documentation and local setup. -->
-# 链签 LinkStamp｜短链接管理与访问统计
+# 链签 LinkStamp
 
-<p align="center">
-  <img alt="Java 17" src="https://img.shields.io/badge/Java-17-E76F00?style=flat-square">
-  <img alt="Spring Boot 4.0.9" src="https://img.shields.io/badge/Spring%20Boot-4.0.9-6DB33F?style=flat-square">
-  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square">
-  <img alt="MySQL 8.0" src="https://img.shields.io/badge/MySQL-8.0-4479A1?style=flat-square">
-  <img alt="Redis" src="https://img.shields.io/badge/Cache-Redis-DC382D?style=flat-square">
-  <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/License-Apache%202.0-0366D6?style=flat-square"></a>
-</p>
+带分组管理、二维码和 PV / UV / 独立 IP 统计的短链接系统。跳转返回 `302`，访问统计交给 Redis Stream 消费者批量入库。
 
-链签面向需要分享活动入口、文档或个人主页的小团队和个人。注册后可按用途建立分组，创建短链接并分享网址或二维码。链接被访问后，可以在工作台查看流量，按需调整有效期、移入回收站或恢复。
+```text
+GET /{shortCode} ─┬─→ 302 Location
+                 └─→ XADD → 批内聚合 → MySQL COMMIT → XACK
+```
 
-### 维护与实现
+`Java 17` `Spring Boot 4.0.9` `MySQL 8.0` `Redis Streams` `Vue 3` · [Apache-2.0](LICENSE)
 
-- 实现自定义短码和即时预览，处理保留字、重名冲突、分组归属和回收站恢复。
-- 改版登录页和短链工作台，整理访问统计界面、启动配置与本机验收流程。
-- 为批量创建补上逐条事务，为访问统计补上按日去重、失败重试和重复消息保护。
+[本机启动](#本机启动) · [系统设计](#系统设计) · [实测结果](#实测结果) · [项目预览](#项目预览) · [目录结构](#目录结构)
 
-[项目预览](#项目预览) · [核心功能](#核心功能) · [系统设计](#系统设计) · [本机启动](#本机启动) · [实测结果](#实测结果)
+## 实测结果
+
+| 500 RPS 档 | 复验结果 |
+| --- | ---: |
+| 实际成功吞吐 | 499.183–499.400 RPS |
+| 跳转 P99 | 44 / **45** / 50 ms |
+| 错误 / 停压积压 | 3 轮均为 0 / 0 |
+| 访问统计对账 | 101,361 次成功跳转，四项统计逐轮一致 |
+
+单应用实例，MySQL、Redis 与 JMeter 共机运行。100 条短链按 80/20 热点分布发压，JMeter 使用开放式线程组和 Java 持久连接，每轮稳态 60 秒。500 RPS 是最高已复验档位。对账检查访问明细、Stream 去重记录、日报 PV 和累计 PV。
+
+[完整压测报告](docs/benchmark-report.md) · [逐轮数据](docs/benchmark/batch-jmeter-summary.csv) · [JMeter 复现](docs/benchmark.md#复现)
 
 ## 项目预览
 
-登录后进入短链工作台。左侧切换分组和回收站，主区域展示短链列表和访问概况。点击列表中的统计入口，可以查看访问趋势和明细。
-
 ![链签控制台及访问统计](docs/linkstamp-console.png)
+
+<details>
+<summary>登录页与自定义短码截图</summary>
 
 | 登录与注册 | 自定义短码 |
 | --- | --- |
 | ![链签登录页](docs/linkstamp-login.png) | ![创建短链时预览自定义短码](docs/linkstamp-custom-code.png) |
+
+</details>
 
 ## 核心功能
 
@@ -45,50 +52,42 @@
 
 ```mermaid
 flowchart LR
-    Console["管理控制台"] --> Vite["Vite 5173"]
-    Vite -->|/api| Gateway["网关 8000"]
-    Gateway -->|后台请求| App["聚合服务 8003"]
-    Gateway -->|校验会话| Redis["Redis"]
-    Visitor["短链访客"] -->|访问短链接| App
-    App -->|HTTP 302| Visitor
-    App -->|跳转缓存与会话管理| Redis
-    App -->|业务查询与写入| MySQL["MySQL"]
-    App -->|投递访问事件| Stream["Redis Stream"]
-    Stream -->|消费统计事件| Worker["统计消费者"]
-    Worker -->|更新访问统计| MySQL
+    Console["Vue 工作台 · 5173"] -->|/api| Gateway["管理网关 · 8000"]
+    Gateway -->|校验会话| Redis["Redis 会话与缓存"]
+    Gateway -->|管理请求| App["聚合服务 · 8003"]
+    Visitor["访客"] -->|GET 短链| App
+    App -->|302 Location| Visitor
+    App -->|查跳转缓存| Redis
+    App -->|路由映射与短链分片| MySQL["MySQL"]
+    App -->|XADD 访问事件| Stream["Redis Stream"]
+    Stream -->|XREADGROUP| Worker["统计消费者"]
+    Worker -->|批量入库| MySQL
+    Worker -->|提交后 XACK| Stream
 ```
 
-### 管理请求与短链跳转
+### 管理与跳转
 
-- 管理控制台的 `/api` 请求由 Vite 转发给网关。网关为需要登录的请求查询 Redis 会话，再把请求交给聚合服务。管理端负责账号和分组权限，短链业务模块负责创建、跳转和统计。
-- 访客直接访问聚合服务的短链路径。服务优先查 Redis，缓存未命中时，通过路由表 `t_link_goto` 查到分组 ID，再按分组查询 `t_link` 分表。有效链接返回 HTTP 302，浏览器根据响应中的 `Location` 打开原始网址。
+- **两条入口**。管理端经网关校验会话，再由聚合服务检查分组权限。访客直连聚合服务，先查跳转缓存，未命中时通过 `t_link_goto` 找到分组 ID，再按分组查询 `t_link` 分表。
+- **短码与缓存**。短链和路由记录在同一事务中写入，唯一索引拦住重名。创建和缓存回填共用 Redisson 锁，创建持锁至事务结束。跳转侧用布隆过滤器和空值缓存减少无效查询。
 
-### 短码并发与缓存回填
+### 访问统计
 
-- 短链记录和路由记录在同一事务写入。`t_link_goto.full_short_url` 的唯一索引保证同一域名下的短码唯一，重名时返回「该短码已被占用」。
-- 创建和跳转回填使用同一把 Redisson 锁，创建持锁至事务结束，成功后首次访问可查库并回填 Redis。跳转还使用布隆过滤器和空值缓存，减少无效短码触发的数据库查询。
-- 批量创建逐条提交，任一条的路由写入失败时，该条短链记录也会回滚。Excel 仅包含成功记录。
-- 管理端校验分组归属，Sentinel 为单条短链创建接口限流。本机默认每秒 20 次，可通过 `SHORTLINK_CREATE_QPS` 调整。
-- 创建或编辑时可以根据目标网址的域名填充建议描述。服务端校验网址格式，生成描述时只提取域名。
+- **批处理事务**。消费者默认每次最多取 128 条，按短链、日期和统计维度在内存汇总。同一事务批量登记 Stream ID、写访问明细并更新汇总，提交后批量 `XACK`。
+- **锁顺序**。消费按短链获取路由读锁，分组迁移持写锁至事务完成。批内按完整短链字典序获取 MySQL 行锁，串行化同一短链的 UV / 独立 IP 判重。
+- **失败处理**。失败批次留在待确认列表（PEL），重领后先整批重试，仍失败时以逐条事务定位坏消息。格式错误或达到重试上限的消息进入死信 Stream。访问事件投递失败时记录日志并继续跳转。
 
-### 异步访问统计
+日报以 UTC+8 自然日为界，按访客 Cookie 和 IP 分别去重。选定区间和历史累计也分别按各自范围去重。访客 Cookie 的作用域为单条短链。
 
-跳转时将访问事件写入 Redis Stream。消费者默认每次取最多 128 条，在内存按短链、日期与统计维度聚合增量，同一 MySQL 事务批量登记消息 ID、写入访问明细并更新汇总。提交后一次 Redis 调用确认整批消息。事务失败时消息保留在待确认列表，重领时可将失败批次拆开处理，格式错误或达到处理上限的消息转入死信 Stream。若投递失败，服务记录日志并继续完成跳转。
+[跳转与缓存源码](project/src/main/java/io/github/qyl66/linkstamp/project/service/impl/ShortLinkServiceImpl.java) · [批处理事务](project/src/main/java/io/github/qyl66/linkstamp/project/mq/consumer/VisitStatsBatchWriter.java) · [确认与重领](project/src/main/java/io/github/qyl66/linkstamp/project/mq/consumer/ShortLinkStatsSaveConsumer.java) · [短码设计](docs/short-code-design.md)
 
-消费端在批内为每条短链获取一次路由读锁，分组迁移持同一把锁的写锁至事务完成。消费事务按固定顺序锁定短链数据行，多个消费者处理同一短链时也能正确计算 UV/UIP。迁移取得写锁后读取当前统计并复制到新分组。
+<details>
+<summary>框架与组件</summary>
 
-PV 按访问计数。单链接的日报按 UTC+8 自然日对访客 Cookie 和 IP 分别去重，首次访问判断通过存在性查询和对应的联合索引完成。选定区间的总览在整个区间去重，累计值按该短链的历史访问去重。分组统计在所选分组和时间范围内按 Cookie 与 IP 去重，访客 Cookie 的作用域为单条短链。地区查询默认关闭，开启方式见[运行数据](#运行数据)。
+- 控制台使用 Vue 3、Vite、Element Plus、ECharts。
+- 后端使用 Spring Cloud Gateway、MyBatis-Plus 和 Sentinel。单条创建限流可通过 `SHORTLINK_CREATE_QPS` 调整。
+- ShardingSphere-JDBC 管理 MySQL 分片；Redis 和 Redisson 提供会话、跳转缓存、锁及消费队列。
 
-[自定义短码设计与故障回归](docs/short-code-design.md)
-
-## 技术栈
-
-| 层次 | 技术 | 用途 |
-| --- | --- | --- |
-| 前端 | Vue 3、Vite、Element Plus、ECharts | 短链工作台、表单、统计图表 |
-| 后端 | Java 17、Spring Boot 4.0.9、Spring Cloud Gateway 5、MyBatis-Plus、Sentinel | 管理 API、会话校验、短链跳转与限流 |
-| 数据 | MySQL 8.0、ShardingSphere 5.5 | 保存账号、分组、链接与访问统计，并对主要业务表分片 |
-| 缓存与异步 | Redis、Redisson、Redis Stream | 会话、跳转缓存、分布式锁、访问事件 |
+</details>
 
 ## 本机启动
 
@@ -169,7 +168,13 @@ npm.cmd ci
 npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-打开[本地登录页](http://127.0.0.1:5173/login)。首次使用时自行注册，系统会自动创建默认分组。可以用 `https://example.com` 创建一条自定义短链，点击验证跳转，再回到工作台查看访问统计。前端生产构建使用 `npm.cmd run build`。
+打开[本地登录页](http://127.0.0.1:5173/login)。首次注册后，系统会自动创建默认分组。用 `demo2026` 创建一条指向 `https://example.com` 的短链，再查看跳转响应头。
+
+```powershell
+curl.exe -sS -D - -o NUL http://127.0.0.1:8003/demo2026
+```
+
+确认状态码为 `302` 且 `Location` 指向目标地址，再回到工作台查看访问统计。前端生产构建使用 `npm.cmd run build`。
 
 ### 常见问题
 
@@ -191,7 +196,7 @@ linkstamp/
 ├── project/      # 短链创建、跳转、回收站及访问统计
 ├── resources/    # 建表 SQL 和本地分片配置样例
 ├── scripts/      # 本地配置生成脚本
-└── docs/         # 界面截图
+└── docs/         # 压测、回归说明和界面截图
 ```
 
 ## 运行数据
@@ -202,7 +207,7 @@ linkstamp/
 
 访问统计记录访客 IP、浏览器、设备类型和访问时间。地区查询默认关闭。显式配置 `SHORTLINK_AMAP_KEY` 后，统计消费者会向高德 IP 定位服务发送访客 IP。
 
-## 实测结果
+## 功能回归
 
 以下场景在本地构建和运行中验收。
 
@@ -217,6 +222,4 @@ linkstamp/
 | 跨日统计与异步恢复 | 同一访客和 IP 跨日访问时，每天各计一次，区间和累计各计一次。统计写入失败后可重试，重复消息不会重复计数，连续失败五次的消息进入死信 Stream。 |
 | 兼容性与界面 | 框架升级后验证了旧账号、加密的手机号和邮箱、已有短链。浏览器验证了登录失败提示、二维码、批量创建与 Excel 导出、统计、回收站恢复和退出，并在 390 像素宽视口检查工作台与账号设置。 |
 
-回归脚本和测试环境见[本机验收说明](docs/regression.md)。
-
-JMeter 同档对照、统计增量对账和新版容量边界见 [LinkStamp 同机热点压测报告](docs/benchmark-report.md)。
+[回归脚本与本机验收](docs/regression.md) · [双消费者正确性记录](docs/benchmark/batch-correctness.json)
